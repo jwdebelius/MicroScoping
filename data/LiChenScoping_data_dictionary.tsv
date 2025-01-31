@@ -1,0 +1,211 @@
+Column	Question Text	Response Text	Question Type
+doi	What is the article DOI?		free_text
+covidence_number	What is the covidence citation number?		free_text
+title	What is the article title?		free_text
+author_list	Who were the authors of the article?		free_text
+meta_purpose[replication_validation]	What was the primary purpose of the combined analysis? (Why did they combine data)	Replication or validation of targeted findings from a single cohort	select_all
+meta_purpose[core_microbiome]	What was the primary purpose of the combined analysis? (Why did they combine data)	Core microbiome analysis (looking for a set of features common across all the samples)	select_all
+meta_purpose[population_synthesis]	What was the primary purpose of the combined analysis? (Why did they combine data)	To compare synthesize across multiple studies to describe a population	select_all
+meta_purpose[not_meta]	What was the primary purpose of the combined analysis? (Why did they combine data)	The study described didn't actually involve combining multiple data sets from multiple prior publications or sequencing data sets	select_all
+meta_purpose[not_described]	What was the primary purpose of the combined analysis? (Why did they combine data)	Not described	select_all
+meta_purpose[other]	What was the primary purpose of the combined analysis? (Why did they combine data)	Other	select_all
+meta_purpose_other	What was the primary purpose of the combined analysis? (Why did they combine data)		free_text
+meta_goal[microbiome_outcome]	What was the primary goal of this meta-analysis (what was the hypothesis they were testing)?	To characterize a microbiome-outcome association	select_all
+meta_goal[microbiome_exposure]	What was the primary goal of this meta-analysis (what was the hypothesis they were testing)?	To characterize a microbiome-exposure association	select_all
+meta_goal[assembly]	What was the primary goal of this meta-analysis (what was the hypothesis they were testing)?	To characterize assembly, development, or temporal variation in the microbial community	select_all
+meta_goal[unqiue_microbiome]	What was the primary goal of this meta-analysis (what was the hypothesis they were testing)?	To characterize a unique microbiome (microbiome environment, population)	select_all
+meta_goal[other]	What was the primary goal of this meta-analysis (what was the hypothesis they were testing)?	Other	select_all
+meta_goal_other	What was the primary goal of this meta-analysis (what was the hypothesis they were testing)?		free_text
+systematic_approach	Was there a clear systematic approach for gathering reference data sets?	Yes | No	select_one
+search_described	Was the search strategy for this meta-analysis described?	Yes | No	select_one
+prisma_included	Was a PRISMA diagram describing how papers were selected included in the paper?	Yes | No	select_one
+study_inclusion	Was there a clear set of inclusion/exclusion criteria for the final studies?	Yes | No	select_one
+num_studies_1o	How many studies were analyzed in the primary meta analysis, after the data was processed? (If this is not listed, leave it blank)		free_text
+num_samples_1o	How many samples were analyzed in the primary meta-analysis, after the data was processed? (If not listed, leave blank)		free_text
+sources_1o[consortium_authors]	What are the sources for sequencing and metadata for data included in the primary meta-analysis?	The authors of the meta-analysis or consortium	select_all
+sources_1o[SRA]	What are the sources for sequencing and metadata for data included in the primary meta-analysis?	SRA/Genbank	select_all
+sources_1o[ena]	What are the sources for sequencing and metadata for data included in the primary meta-analysis?	ENA	select_all
+sources_1o[request_authors]	What are the sources for sequencing and metadata for data included in the primary meta-analysis?	Request to authors of the original data set (not co-authors of meta analysis)	select_all
+sources_1o[mg_rast]	What are the sources for sequencing and metadata for data included in the primary meta-analysis?	MG-RAST	select_all
+sources_1o[qitta]	What are the sources for sequencing and metadata for data included in the primary meta-analysis?	QIIME DB or Qiita	select_all
+sources_1o[other]	What are the sources for sequencing and metadata for data included in the primary meta-analysis?	Other	select_all
+sources_1o[not_described]	What are the sources for sequencing and metadata for data included in the primary meta-analysis?	Not described	select_all
+sources_1o_other	What are the sources for sequencing and metadata for data included in the primary meta-analysis?		free_text
+validation	Did the study include any independent validation cohorts? (not included in the original analysis)	Yes | No	select_one
+num_studies_valid	How many studies were analyzed for validation (final number after processing)? (If not known, leave blank)		free_text
+num_sample_validation	How many samples were analyzed for validation (final number after processing)? (if not listed, leave blank)		free_text
+valid_source[consortium_authors]	What were the sources for sequences and metadata for the validation analysis?	The authors of the meta-analysis or consortium	select_all
+valid_source[SRA]	What were the sources for sequences and metadata for the validation analysis?	SRA/Genbank	select_all
+valid_source[ena]	What were the sources for sequences and metadata for the validation analysis?	ENA	select_all
+valid_source[request_authors]	What were the sources for sequences and metadata for the validation analysis?	Request to authors of the original data set (not co-authors of meta analysis)	select_all
+valid_source[mg_rast]	What were the sources for sequences and metadata for the validation analysis?	MG-RAST	select_all
+valid_source[qitta]	What were the sources for sequences and metadata for the validation analysis?	QIIME DB or Qiita	select_all
+valid_source[other]	What were the sources for sequences and metadata for the validation analysis?	Other	select_all
+valid_source[not_described]	What were the sources for sequences and metadata for the validation analysis?	Not described	select_all
+valid_source_other	What were the sources for sequences and metadata for the validation analysis?		free_text
+envo[built_envo]	Which environments were included?	Built environment (i.e. house walls, office floor, etc)	select_all
+envo[host]	Which environments were included?	host	select_all
+envo[human]	Which environments were included?	Human-associated	select_all
+envo[other]	Which environments were included?	Other	select_all
+envo_other	Which environments were included?		free_text
+envo_bodysite[gut]	If human or non-human animals were included, which body sites were analyzed?	Gut (Feces, rectal swab, biopsy)	select_all
+envo_bodysite[oral]	If human or non-human animals were included, which body sites were analyzed?	Oral	select_all
+envo_bodysite[skin]	If human or non-human animals were included, which body sites were analyzed?	Urogenital	select_all
+envo_bodysite[urogenital]	If human or non-human animals were included, which body sites were analyzed?	Skin	select_all
+envo_bodysite[airway]	If human or non-human animals were included, which body sites were analyzed?	Airway	select_all
+envo_bodysite[other]	If human or non-human animals were included, which body sites were analyzed?	Other	select_all
+envo_bodysite_other	If human or non-human animals were included, which body sites were analyzed?		free_text
+species	What non-human animal species were included?		free_text
+species_compare	If non-human animals were included, was this analysis a comparison between host species?	Yes | Maybe | No | Unclear	select_one
+design_info[population]	Which of the following are reported for the studies that were combined?	Population description	select_all
+design_info[experimental_design]	Which of the following are reported for the studies that were combined?	Experimental design (randomization, variable matching)	select_all
+design_info[sampling_method]	Which of the following are reported for the studies that were combined?	Sampling method(s)/collection kit(s)	select_all
+design_info[collection_kit]	Which of the following are reported for the studies that were combined?	Population description	select_all
+design_info[extraction_kit]	Which of the following are reported for the studies that were combined?	Extraction kit(s) used	select_all
+design_info[hypervariable_region]	Which of the following are reported for the studies that were combined?	Hypervariable region(s)	select_all
+design_info[sequencer]	Which of the following are reported for the studies that were combined?	Sequencing platform	select_all
+seq_platforms[454]	Which sequencing platforms were used?	454 pyrosequencing	select_all
+seq_platforms[illumina]	Which sequencing platforms were used?	Illumina (MiSeq, HiSeq, NovoSeq)	select_all
+seq_platforms[ion_torrent]	Which sequencing platforms were used?	454 pyrosequencing	select_all
+seq_platforms[other]	Which sequencing platforms were used?	Other	select_all
+seq_platforms_other	Which sequencing platforms were used?		free_text
+hypervar_regions[V12]	Which hypervariable regions were included	V12	select_all
+hypervar_regions[V13]	Which hypervariable regions were included	V13	select_all
+hypervar_regions[V2]	Which hypervariable regions were included	V2	select_all
+hypervar_regions[V23]	Which hypervariable regions were included	V23	select_all
+hypervar_regions[V3]	Which hypervariable regions were included	V3	select_all
+hypervar_regions[V34]	Which hypervariable regions were included	V34	select_all
+hypervar_regions[V35]	Which hypervariable regions were included	V35	select_all
+hypervar_regions[V4]	Which hypervariable regions were included	V4	select_all
+hypervar_regions[V45]	Which hypervariable regions were included	V45	select_all
+hypervar_regions[V46]	Which hypervariable regions were included	V46	select_all
+hypervar_regions[V68]	Which hypervariable regions were included	V68	select_all
+hypervar_regions[Other]	Which hypervariable regions were included	Other	select_all
+hypervar_regions_other	Which hypervariable regions were included		free_text
+common_pipeline	Were all the data processed using a similar pipeline?	Yes | No | Not described	select_one
+taxa_profile	Did the authors perform taxonomic profiling and analyze the data? (i.e. denoise to ASVs, OTU clustering)?	Yes | No	select_one
+fun_profile	Did the authors perform functional profiling? (i.e. tools like PICRUSt, Tax4Fun, mention of KEGGs in results)	Yes | No	select_one
+asvs	Were sequences denoised? (This might be indicated by the used of DADA2, Deblur, Unoise3, or the description of features as ASVs)?	no=no | yes=yes | uclear_no_desc=unclear/not described | not_desc=4	select_one
+otus	otus	no=no | yes=yes | uclear_no_desc=unclear/not described	select_one
+otu_type[de_novo]	What type of OTU clustering was performed and used for primary analysis (if multiple types of clustering were performed, or validation clustering was perform)?	de novo clustering	select_all
+otu_type[open_ref]	What type of OTU clustering was performed and used for primary analysis (if multiple types of clustering were performed, or validation clustering was perform)?	open reference clustering	select_all
+otu_type[closed_ref]	What type of OTU clustering was performed and used for primary analysis (if multiple types of clustering were performed, or validation clustering was perform)?	closed reference clustering	select_all
+otu_type[unclear]	What type of OTU clustering was performed and used for primary analysis (if multiple types of clustering were performed, or validation clustering was perform)?	Not described/unclear	select_all
+otu_type[not_described]	What type of OTU clustering was performed and used for primary analysis (if multiple types of clustering were performed, or validation clustering was perform)?	Not described	select_all
+qual_filter	If the data was not denoised or clustered into OTUs, was the data collapsed to a taxonomic level without denoising or clustering?	no=no | yes=yes | uclear_no_desc=unclear/not described	select_one
+tree_construction	If the authors performed denoising without clustering, open reference clustering or de novo clustering, how did they describe their phylogenetic tree construction?	no tree=They did not construct a phylogenetic tree (no UniFrac or Faith's diversity) | mafft=They used MAFTT, Fast Tree, or another de novo approach | fragment=They used fragment insertion (SEPP, epa-ng) | unclear=Not described/unclear	select_one
+table_tools[dada2]	table_tools	DADA2 in R or QIIME 2	select_all
+table_tools[deblur]	table_tools	Deblur	select_all
+table_tools[unoise]	table_tools	Unoise	select_all
+table_tools[usearch]	table_tools	Usearch	select_all
+table_tools[uclust]	table_tools	Uclust	select_all
+table_tools[mothur]	table_tools	Mothur	select_all
+table_tools[qiime1]	table_tools	QIIME 1	select_all
+table_tools[qiime2]	table_tools	QIIME 2	select_all
+table_tools[qiita]	table_tools	QIIME DB or Qiita	select_all
+table_tools[vsearch]	table_tools	vsearch	select_all
+table_tools[nb_classifier]	table_tools	naive baysian classifer	select_all
+table_tools[cutadapt]	table_tools	cutadapt	select_all
+table_tools[picrust1]	table_tools	PICRUSt 1	select_all
+table_tools[picrust2]	table_tools	PICRUSt 2	select_all
+table_tools[picrust_tbd]	table_tools	PICRUSt (version not listed)	select_all
+table_tools[tax4fun]	table_tools	Tax4Fun	select_all
+table_tools[kraken]	table_tools	Kraken	select_all
+table_tools[other]	table_tools	Other	select_all
+table_tools_other	table_tools_other		free_text
+table_notes	Are there any other notes you'd like to add for the feature table generation?		free_text
+analyses_perf[descriptive]	Which aspects of the microbiome were analyzed?	Descriptive analysis including taxonomy plots	select_all
+analyses_perf[alpha]	Which aspects of the microbiome were analyzed?	Alpha diversity	select_all
+analyses_perf[beta]	Which aspects of the microbiome were analyzed?	Beta diversity	select_all
+analyses_perf[differenital_abundance]	Which aspects of the microbiome were analyzed?	Differential abundance	select_all
+analyses_perf[sample_classification]	Which aspects of the microbiome were analyzed?	Sample classification (i.e. random forest)	select_all
+analyses_perf[core_microbiome]	Which aspects of the microbiome were analyzed?	Core microbiome analysis (looking for a set of features common across all the samples)	select_all
+analyses_perf[co_occurance]	Which aspects of the microbiome were analyzed?	Descriptive analysis including taxonomy plots	select_all
+analyses_perf[other]	Which aspects of the microbiome were analyzed?	Other	select_all
+analyses_perf_other	Which aspects of the microbiome were analyzed?		free_text
+taxa_level[otu_asv]	Which taxonomic levels were used for descriptive analysis?	OTU/ASV	select_all
+taxa_level[genus]	Which taxonomic levels were used for descriptive analysis?	Genus	select_all
+taxa_level[family]	Which taxonomic levels were used for descriptive analysis?	Family	select_all
+taxa_level[phylum]	Which taxonomic levels were used for descriptive analysis?	Phylum	select_all
+taxa_level[not_described]	Which taxonomic levels were used for descriptive analysis?	Not described	select_all
+alpha_level[otu_asv]	At which taxonomic levels was alpha diversity analyzed? (Faith's PD must be analyzed at the OTU/ASV level)	OTU/ASV	select_all
+alpha_level[species]	At which taxonomic levels was alpha diversity analyzed? (Faith's PD must be analyzed at the OTU/ASV level)	Species	select_all
+alpha_level[genus]	At which taxonomic levels was alpha diversity analyzed? (Faith's PD must be analyzed at the OTU/ASV level)	Genus	select_all
+alpha_level[family]	At which taxonomic levels was alpha diversity analyzed? (Faith's PD must be analyzed at the OTU/ASV level)	Family	select_all
+alpha_level[order]	At which taxonomic levels was alpha diversity analyzed? (Faith's PD must be analyzed at the OTU/ASV level)	Family	select_all
+alpha_level[class]	At which taxonomic levels was alpha diversity analyzed? (Faith's PD must be analyzed at the OTU/ASV level)	Class	select_all
+alpha_level[phylum]	At which taxonomic levels was alpha diversity analyzed? (Faith's PD must be analyzed at the OTU/ASV level)	Phylum	select_all
+alpha_level[not_described]	At which taxonomic levels was alpha diversity analyzed? (Faith's PD must be analyzed at the OTU/ASV level)	Not described	select_all
+alpha_study[pooled]	alpha_study	Pooled all samples within a study	select_all
+alpha_study[no_adjustment]	alpha_study	Not adjustment for study effects (i.e. kruskal wallis testing)	select_all
+alpha_study[fixed]	alpha_study	Adjusted for study as a fixed term (linear regression)	select_all
+alpha_study[random]	alpha_study	Linear mixed effects model with study as a random effect	select_all
+alpha_study[meta_analysis]	alpha_study	A comparison of results across individual cohorts (i.e. forest plot, effect pooling)	select_all
+alpha_study[not_described]	alpha_study	Not described	select_all
+alpha_study[other]	alpha_study	Other	select_all
+alpha_study_other	alpha_study_other		free_text
+beta_level[otu_asv]	At which taxonomic levels was beta diversity analyzed? (UniFrac distance must be analyzed at the OTU/ASV level)	OTU/ASV	select_all
+beta_level[species]	At which taxonomic levels was beta diversity analyzed? (UniFrac distance must be analyzed at the OTU/ASV level)	Species	select_all
+beta_level[genus]	At which taxonomic levels was beta diversity analyzed? (UniFrac distance must be analyzed at the OTU/ASV level)	Genus	select_all
+beta_level[family]	At which taxonomic levels was beta diversity analyzed? (UniFrac distance must be analyzed at the OTU/ASV level)	Family	select_all
+beta_level[order]	At which taxonomic levels was beta diversity analyzed? (UniFrac distance must be analyzed at the OTU/ASV level)	Family	select_all
+beta_level[class]	At which taxonomic levels was beta diversity analyzed? (UniFrac distance must be analyzed at the OTU/ASV level)	Class	select_all
+beta_level[phylum]	At which taxonomic levels was beta diversity analyzed? (UniFrac distance must be analyzed at the OTU/ASV level)	Phylum	select_all
+beta_level[not_described]	At which taxonomic levels was beta diversity analyzed? (UniFrac distance must be analyzed at the OTU/ASV level)	Not described	select_all
+beta_study[no_study_pcoa]	How did beta diversity analysis handle study effects?	Descriptive PCoA that did not show study effects	select_all
+beta_study[pcoa_study_effects]	How did beta diversity analysis handle study effects?	PCoA showing study effects	select_all
+beta_study[adonis_adj]	How did beta diversity analysis handle study effects?	Adonis permanova showing or adjusting for study effect size	select_all
+beta_study[other_test_adj]	How did beta diversity analysis handle study effects?	Other test adjusted for study effect	select_all
+beta_study[no_adj]	How did beta diversity analysis handle study effects?	Not adjustment or acknowledgment of study effect	select_all
+beta_study[other]	How did beta diversity analysis handle study effects?	Other	select_all
+beta_study[not_described]	How did beta diversity analysis handle study effects?	Not described	select_all
+beta_study_other	How did beta diversity analysis handle study effects?		free_text
+diff_abund_level[otu_asv]	At which taxonomic levels was differential abundance analyzed?	OTU/ASV	select_all
+diff_abund_level[species]	At which taxonomic levels was differential abundance analyzed?	Species	select_all
+diff_abund_level[genus]	At which taxonomic levels was differential abundance analyzed?	Genus	select_all
+diff_abund_level[family]	At which taxonomic levels was differential abundance analyzed?	Family	select_all
+diff_abund_level[order]	At which taxonomic levels was differential abundance analyzed?	Family	select_all
+diff_abund_level[class]	At which taxonomic levels was differential abundance analyzed?	Class	select_all
+diff_abund_level[phylum]	At which taxonomic levels was differential abundance analyzed?	Phylum	select_all
+diff_abund_level[not_described]	At which taxonomic levels was differential abundance analyzed?	Not described	select_all
+diff_target[targeted]	What types of microbiome differential abundance testing was performed?	Differential abundance of a targeted taxa (IE is F. nucleatum higher in all the studies)	select_all
+diff_target[untargeted]	What types of microbiome differential abundance testing was performed?	Untargeted differential abundance	select_all
+diff_filter[no_filtered]	How was the data filtered before differential abundance?	The features were not filtered	select_all
+diff_filter[per_study]	How was the data filtered before differential abundance?	The filter was applied individually in each study	select_all
+diff_filter[consistent]	How was the data filtered before differential abundance?	The filter was applied across all studies	select_all
+diff_filter[prevelance]	How was the data filtered before differential abundance?	the features were filtered based on prevalence	select_all
+diff_filter[abundance]	How was the data filtered before differential abundance?	The features were filtered based on abundance	select_all
+diff_filter[taxonomy_meta]	How was the data filtered before differential abundance?	The features were filtered based on taxonomic assignment or other information	select_all
+diff_type[pool_no_adj]	How were multiple studies handled in differential abundance testing?	The studies were pooled with no affect adjustment	select_all
+diff_type[fixed_effect]	How were multiple studies handled in differential abundance testing?	Pooled analysis adjusted for study or technical effect (fixed effect)	select_all
+diff_type[random_effect]	How were multiple studies handled in differential abundance testing?	Pooled analysis with study as a random effect	select_all
+diff_type[meta_analysis]	How were multiple studies handled in differential abundance testing?	A comparison of results across individual cohorts (i.e. forest plot, effect pooling)	select_all
+diff_type[not_described]	How were multiple studies handled in differential abundance testing?	Not described	select_all
+diff_type[other]	How were multiple studies handled in differential abundance testing?	Other	select_all
+diff_type_other	How were multiple studies handled in differential abundance testing?		free_text
+diff_algorith[parametric_rarefied]	diff_algorith	"•	t-test or ordinary least squares regression on rarefied data"	select_all
+diff_algorith[rare_kw]	diff_algorith	kruskal wallis test on rarefied data	select_all
+diff_algorith[LefSe]	diff_algorith	LefSe	select_all
+diff_algorith[DeSeq2]	diff_algorith	DeSeq2	select_all
+diff_algorith[MaAslin]	diff_algorith	MaAslin	select_all
+diff_algorith[metagenomSeq]	diff_algorith	metagenomSeq	select_all
+diff_algorith[limma_voom]	diff_algorith	Limma Vroom	select_all
+diff_algorith[parametric_clr]	diff_algorith	kruskal wallis, t-test, or other parametric model with on CLR-transformed data	select_all
+diff_algorith[aldex2]	diff_algorith	ALDEx2	select_all
+diff_algorith[ancom]	diff_algorith	"•	ANCOM I or ANCOM II"	select_all
+diff_algorith[ancom_bc]	diff_algorith	ANCOM-BC	select_all
+diff_algorith[dr]	diff_algorith	Differential ranking (songbird, Birdman, Bayesian DR)	select_all
+diff_algorith[other]	diff_algorith	Other	select_all
+diff_algorith[not_described]	diff_algorith	Not described	select_all
+diff_algorith_other	diff_algorith_other		free_text
+class_level[otu_asv]	What taxonomic level(s) were used to build a sample classifier?	OTU/ASV	select_all
+class_level[species]	What taxonomic level(s) were used to build a sample classifier?	Species	select_all
+class_level[genus]	What taxonomic level(s) were used to build a sample classifier?	Genus	select_all
+class_level[family]	What taxonomic level(s) were used to build a sample classifier?	Family	select_all
+class_level[order]	What taxonomic level(s) were used to build a sample classifier?	Family	select_all
+class_level[class]	What taxonomic level(s) were used to build a sample classifier?	Class	select_all
+class_level[phylum]	What taxonomic level(s) were used to build a sample classifier?	Phylum	select_all
+class_level[not_described]	What taxonomic level(s) were used to build a sample classifier?	Not described	select_all
+class_train	How was the classifier trained?	single_study=It was trained on a single study | multi_studies_no_effect=It was trained on multiple studies with no consider of study effect | loo=Leave a study out or cross validation training | other=Other | not_described=Not described	select_one
+class_validate	Did the authors validate their classifier on other cohorts not originally used to train the classifier?	Yes | No | Unclear | Not described	select_one
+final_notes	Is there anything else you'd like to say about the study?		free_text
