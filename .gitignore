@@ -1,6 +1,6 @@
 # Outputs
 code/output/*
-
+code/*.png
 # Mac System
 .DS_Store
 */.DS_Store
