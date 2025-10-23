@@ -1,449 +1,526 @@
 ---
-title: "MicrobiomeScopingReview"
+title: "MicrobiomeScopingReview_Analysis"
 author: "JW Debelius; Y Chen; Y Sun; Z Li"
-date: "2025-01-31"
-output: html_document
+date: "2025-09-01"
+output:
+  html_document:
+  toc: true
+toc_depth: 3
+toc_float: true
+number_sections: true
 ---
 
+  
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-```{r, warning=FALSE, message=FALSE}
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
 library(tidyverse)
+library(data.table)
 library(tableone)
 library(readxl)
 library(ComplexUpset)
 library(ggplot2)
 library(patchwork)
+library(scales)
+library(reactable)
 #library(grid)
 #library(gridExtra)
 ```
+  
+# Goal
 
-# Reading in the data
+Our goal with this notebook is to analyze the cleaned scoping review data to
+understand hte analysis and processes.
 
-We'll start by reading in the data and a manually prepared summary table.
+# Read in data
 
-```{r}
-data <- read.csv('../data/LiChenScoping_data.tsv', sep='\t', 
-                 colClasses = 'character') %>%
-   tibble() %>%
-  mutate_all(., ~replace(., . %in% c('', 'NA'), NA))
-dim(data)
+```{r, results='hide'}
+data <- read.csv('../data/cleaned_data_jwd2.csv', colClasses = 'character') %>%
+  select(-c(`X`)) %>%
+  mutate_at(., .vars=vars(starts_with('meta_purpose.')
+                         ,starts_with('meta_goal.') 
+                         ,starts_with('sources_1o.')
+                         ,starts_with('valid_source.') 
+                         ,starts_with('envo_bodysite.')
+                         ,starts_with('design_info.')
+                         ,starts_with('seq_platforms.')
+                         ,starts_with('hypervar_regions.')
+                         ,starts_with('analyses_perf.')
+                         ,starts_with('taxa_level.')
+                         ,starts_with('alpha_level.')
+                         ,starts_with('alpha_stduy.')
+                         ,starts_with('beta_level.')
+                         ,starts_with('beta_study.')
+                         ,starts_with('da_level.')
+                         ,starts_with('da_filter.')
+                         ,starts_with('da_target.')
+                         ,starts_with('da_type.')
+                         ,starts_with('class_level.')
+                         ,starts_with('num')
+                         ,validation
+                         ,systematic_approach
+                         ,search_described
+                         ,prisma_included
+                         ,study_inclusion
+                         ,ends_with('code')
+                         )
+             , .funs=as.numeric)
 ```
-
-We'll start by loading the studies that were collected from the citations document
-
-```{r, warning=FALSE, message=FALSE}
-citations <- read_excel('../data/LiChenScopingCitations.xlsx') %>%
-  select(., -(c(DOI...13))) %>%
-  filter(., `Covidence #` %in% data$covidence_number) %>%
-  rename(all_of(c(doi='DOI...1', covidence_number='Covidence #'))) %>%
-  mutate(., in_title = (grepl('meta-ana', tolower(Title)) | 
-                        grepl('meta ana', tolower(Title)))
-          , in_abstract = (grepl('meta-ana', tolower(Abstract)) | 
-                           grepl('meta ana', tolower(Abstract)))) %>%
-  mutate(., meta_in_title_abs = (in_title | in_abstract) * 1
-          , in_title = in_title * 1
-          , in_abstract = in_abstract * 1
-    )
+```{r, echo=FALSE}
+res.table <- list()
+supplemental.tables <- list()
 ```
 
 # Table 1
 
-I want to consturct a summary document based on what Lianne did. We'll start 
-by tabulating the purpose, both overall and by intersections.
+We want to construct a sumamry table describing the purpose, goal...
 
 ```{r}
-purpose.df <- data %>% 
-  select(c('doi',  starts_with('meta_purpose'))) %>%
-  rename_with(., .fn=~str_remove(., 'meta_purpose.'), .cols=starts_with('meta_purpose.')) %>%
-  rename_with(,, .fn=~str_remove(., '\\.')) %>%
-  mutate_at(., .vars=vars(-c(doi, meta_purpose_other)), .funs=as.numeric) %>%
-  mutate(., core_microbiome = replace(core_microbiome, doi == '10.3389/fcimb.2021.645951', 0)) %>%
-  mutate(., num_resp = replication_validation + core_microbiome + population_synthesis + other) %>%
-  mutate(., purpose = case_when(other == 1 & num_resp == 1 ~ 'other'
-                               ,replication_validation == 1 & num_resp == 1 ~ 'replication_validation'
-                               ,core_microbiome == 1 & num_resp == 1 ~ 'core_microbiome'
-                               ,population_synthesis == 1 & num_resp == 1 ~ 'population_synthesis'
-                               ,population_synthesis == 1 & core_microbiome == 1 & num_resp == 2 ~ 'population_synthesis + core_microbiome'
-                               ,population_synthesis == 1 & replication_validation == 1 & num_resp == 2 ~ 'population_synthesis + replication_validation'
-                               ,.default='oopsie')
-          )
-
-purpose.df %>% group_by(purpose) %>% count()
-```
-
-```{r}
-purpose.df %>% summarise(across(-c(doi, num_resp, purpose, meta_purpose_other), sum)) %>%
-  pivot_longer(cols=everything(), names_to='step', values_to='count') %>%
-  mutate(., percent = round(count / 60, 2))
-```
-```{r}
-purpose.df %>% filter(other == 1) %>%
-  select(c(doi, meta_purpose_other))
-```
-
-```{r}
-goal.df <- data %>%
-  select(c('doi', starts_with('meta_goal'))) %>%
-  rename_with(., .fn=~str_remove(., 'meta_goal.'), .cols=starts_with('meta_goal.')) %>%
-  rename_with(,, .fn=~str_remove(., '\\.')) %>%
-  mutate_at(., .vars=vars(-c(doi, meta_goal_other)), .funs=as.numeric) %>%
-  mutate(., num_resp = (microbiome_outcome + microbiome_exposure + assembly + 
-                        unqiue_microbiome + other)) %>%
-  mutate(., goal = case_when(microbiome_outcome == 1 & num_resp == 1 ~ 'outcome'
-                            ,microbiome_exposure == 1 & num_resp == 1 ~ 'exposure'
-                            ,assembly == 1 & num_resp == 1 ~ 'assembly'
-                            ,unqiue_microbiome == 1 & num_resp == 1 ~ 'unique_microbiome'
-                            ,other == 1 & num_resp == 1 ~ 'other'
-                            ,microbiome_outcome == 1 & microbiome_exposure == 1 ~ 'outcome + exposure'
-                            ,microbiome_outcome == 1 & assembly == 1 ~ 'outcome + assembly'
-                            ,microbiome_outcome == 1 & unqiue_microbiome == 1 ~ 'outcome + unique'
-                            ,microbiome_outcome == 1 & other == 1 ~ 'outcome + other'
-                            ,microbiome_exposure == 1 & assembly == 1 ~ 'exposure + assembly'
-                            ,microbiome_exposure == 1 & unqiue_microbiome == 1 ~ 'exposure + unique'
-                            ,microbiome_exposure == 1 & other == 1 ~ 'exposure + other'
-                            ,assembly == 1 & unqiue_microbiome == 1 ~ 'assembly + unique'
-                            ,assembly == 1 & other == 1 ~ 'assembly + other'
-                            ,unqiue_microbiome == 1 & other == 1 ~ 'unique + other'
-                            ,.default = 'oopsie'
-                            
-                            )
-        )
-```
-
-```{r}
-goal.df %>% summarise(across(-c(doi, num_resp, goal, meta_goal_other), sum)) %>%
-  pivot_longer(cols=everything(), names_to='step', values_to='count') %>%
-  mutate(., percent = round(count / 60, 2))
-```
-```{r}
-(goal.df %>% filter(other == 1) %>%
-  select(c(doi, meta_goal_other)))$meta_goal_other
-```
-```{r}
-envo.df <- data %>% 
-  select(c(doi, starts_with('envo.'), 'envo_other')) %>%
-  mutate_at(., .vars=vars(starts_with('envo.')), .funs=as.numeric) %>%
-  rename_with(., .fn=~str_remove(., 'envo.'), .cols=starts_with('envo.')) %>%
-  rename_with(,, .fn=~str_remove(., '\\.')) %>%
-  arrange(., desc(host)) %>%
-  mutate(., envo = case_when(!is.na(envo_other) & envo_other != 'plants' ~ 'multi enviroment'
-                             ,built_envo == 1 ~ 'human + built enviroment'
-                             ,host == 1 ~ 'human + host_assoc'
-                             ,.default = 'human')
+table1 <- list(
+  data.frame(question=c('Number of studies included')
+            ,response=c('')
+            ,n=dim(data)[1])
   )
-envo.df %>% 
-  group_by(envo) %>% count() %>%
-  mutate(., perc = round(n / 60, 2))
-```
-```{r}
-envo.bs <- data %>%
-  select(c(doi, envo_other, starts_with('envo_bodysite'))) %>%
-  mutate_at(., .vars=vars(starts_with('envo_bodysite.')), .funs=as.numeric) %>%
-  rename_with(., .fn=~str_remove(., 'envo_bodysite.'), .cols=starts_with('envo_bodysite.')) %>%
-  rename_with(,, .fn=~str_remove(., '\\.')) %>%
-  mutate(., num_resp = gut + oral + skin + urogenital + airway
-          , pan_enviromental = !is.na(envo_other) * 1) %>%
-  arrange(desc(num_resp)) %>%
-  mutate(., body_site = case_when(!is.na(envo_other) ~ 'multiple enviroments'
-                            ,num_resp == 5 ~ 'gut + oral + skin + urogenital + airway'
-                            ,gut == 1 & oral == 1 & skin == 1 ~ 'gut + oral + skin'
-                            ,gut == 1 & oral == 1 & urogenital == 1 ~ 'gut + oral + urogenital'
-                            ,gut == 1 & oral == 1 ~ 'gut + oral'
-                            ,gut == 1 & skin == 1 ~ 'gut + skin'
-                            ,gut == 1 & urogenital == 1 ~ 'gut + urogenital'
-                            ,gut == 1 & airway == 1 ~ 'gut + airway'
-                            ,oral == 1 & skin == 1~ 'oral + oral + skin'
-                            ,oral == 1 & urogenital == 1 ~ 'oral + urogenital'
-                            ,oral == 1 & airway == 1 ~ 'oral + airway'
-                            ,skin == 1 & urogenital == 1 ~ 'skin + urogenital'
-                            ,skin == 1 & airway == 1 ~ 'skin + airway'
-                            ,urogenital == 1 & airway == 1 ~ 'urogenital + airway'
-                            ,gut == 1 & num_resp == 1 ~ 'gut'
-                            ,oral == 1 & num_resp == 1 ~ 'oral'
-                            ,skin == 1 & num_resp == 1 ~ 'skin'
-                            ,urogenital == 1 & num_resp == 1 ~ 'urogenital'
-                            ,airway == 1 & num_resp == 1 ~ 'airway'
-                            ,.default = 'oopsie!'
-                            )) %>%
-  mutate(., body_site_simp = case_when(gut == 1 & num_resp == 2 ~ 'gut with other body site'
-                                      ,gut == 1 & num_resp == 1 ~ 'gut'
-                                      ,num_resp > 2 ~ '≥3 body sites'
-                                      #,num_resp == 2 ~ 'multiple other sites'
-                                      ,!is.na(envo_other) ~ 'multiple enviroments'
-                                      ,.default =  'other')) 
-envo.bs %>%
-  select(-c(doi, body_site, body_site_simp, envo_other, envo_bodysite_other, num_resp)) %>%
-  summarise(across(everything(), sum)) %>%
-  pivot_longer(cols=everything(), names_to='step', values_to='count') %>%
-  mutate(., percent = round(count / 60, 2)) %>%
-  arrange(desc(count))
-```
-```{r}
-envo.bs %>% group_by(body_site_simp) %>% count() %>%
-  mutate(., perc = round(n / 60, 2))
 ```
 
-```{r}
-num.studies <- data %>% 
-  select(c(doi, num_studies_1o, num_samples_1o, validation, num_studies_valid, num_sample_validation)) %>%
-  mutate(., num_samples_1o = ifelse(grepl('=',num_samples_1o), str_split_i(num_samples_1o, '=', -1), num_samples_1o)) %>%
-  mutate_at(., .vars=vars(starts_with('num')), .funs=as.numeric) %>%
-  mutate(., num_studies_valid = replace(num_studies_valid, validation == 'No', NA)
-          , num_sample_validation = replace(num_sample_validation, validation == 'No', NA)
+## Analysis Purpose
+
+For the analytical purpose in table 1, we're going to count all the datasets 
+with that purpose, regardless of the overlap.
+
+```{r, results='hide'}
+table1[['purpose']] <- 
+  data %>%
+  select(c(doi, starts_with('meta_purpose'))) %>%
+  summarise(across(.cols=-c(doi, meta_purpose_other), sum)) %>%
+  rename_with(., .fn=~str_remove(str_remove(., 'meta_purpose.'), '\\.')
+               , .cols=everything()) %>%
+  mutate(., question = 'Purpose') %>%
+  pivot_longer(cols=-c(question), names_to = 'response', values_to = 'n') %>%
+  filter(., n > 0) %>%
+  mutate(., p = round(n / dim(data), 2) * 100
+          , response = case_when(response == 'population_synthesis' ~ 'Population synthesis'
+                                ,response == 'core_microbiome' ~ 'Describing a core microbiome'
+                                ,response == 'replication_validation' ~ 'Replication and validation of previous findings'
+                                ,response == 'other' ~ 'Other purposes^2')
           ) %>%
-  mutate(., num_studies_cat = case_when(is.na(num_studies_1o) ~ 'not described'
-                                        #,num_studies_1o == 1 ~ ' 1'
-                                        #,num_studies_1o == 2 ~ ' 2'
-                                        ,num_studies_1o <= 5 ~ ' <=5'
-                                        ,num_studies_1o <= 10 ~ ' 6-10'
-                                        ,num_studies_1o <= 15 ~ '11-15'
-                                        ,.default = '15+')
-         , num_samples_cat = case_when(is.na(num_samples_1o) ~ 'not described'
-                                       ,num_samples_1o <= 500 ~ '<500'
-                                       ,num_samples_1o <= 1500 ~ '501 - 1500'
-                                       ,num_samples_1o <= 2500 ~ '1501 - 2500'
-                                       ,.default = '≥2500'
-                                       )
-         , num_studies_vcat = case_when(validation != "Yes" ~ 'no validation'
-                                       ,is.na(num_studies_valid) ~ 'not described'
-                                       ,num_studies_valid == 1 ~ '1'
-                                       ,num_studies_valid == 2 ~ '2'
-                                       ,.default = '3 or more')
-         , num_samples_vcat = case_when(validation != "Yes" ~ 'no validation'
-                                        ,is.na(num_sample_validation) ~ 'not described'
-                                       ,num_sample_validation < 100 ~ '<100'
-                                       ,num_sample_validation < 200 ~ '100-199'
-                                       ,num_sample_validation < 500 ~ '200-499'
-                                       ,.default = '≥500')
-    )
+  arrange(., desc(n))
 ```
+```{r, echo=FALSE}
+table1[['purpose']] %>% reactable()
+```
+
+And then I'd like to check the list of "other" purposes.
+
+```{r, echo=FALSE}
+data %>%
+  filter(., !is.na(meta_purpose_other)) %>%
+  select(c(doi, meta_purpose_other)) %>%
+  reactable()
+```
+
+So, we have two that look like methods validation, and one that is a 
+pan-environmental comparison.
+
+## Analysis Goal
+
+This is another case where we want to look at the analytical goal, again, 
+
+```{r, results='hide'}
+table1[['goal']] <- 
+  data %>%
+  select(starts_with('meta_goal.')) %>%
+  summarise(across(.cols=everything(), sum)) %>%
+  rename_with(., .fn=~str_remove(str_remove(., 'meta_goal.'), '\\.')
+               , .cols=everything()) %>%
+  mutate(., question = 'Goal') %>%
+  pivot_longer(cols=-c(question), names_to = 'response', values_to = 'n') %>%
+  filter(., n > 0) %>%
+  mutate(., p = round(n / dim(data)[1], 2) * 100
+          , response = case_when(response == 'microbiome_outcome' ~ 'Describe the relationship between the microbiome and an outcome'
+                               ,response == 'microbiome_exposure' ~ 'Describe the relationship between the microbiome and an exposure'
+                               ,response == 'unqiue_microbiome' ~ 'To characterize a unique microbiome'
+                               ,response == 'assembly' ~ 'Studying community assembly or dynamics'
+                               ,response == 'other' ~ 'Other goal^{3}'
+                               )
+          ) %>%
+  arrange(., desc(n))
+```
+```{r, echo=FALSE}
+table1[['goal']] %>% reactable()
+```
+
+And then let's look at our other goals.
+
+```{r, echo=FALSE}
+data %>%
+  filter(., !is.na(meta_goal_other)) %>%
+  select(c(doi, meta_goal_other)) %>%
+  reactable()
+```
+
+So, we have two papers that are methodological comparisons 
+(10.1371/journal.pcbi.1010066 and 10.1101/gr.151803.112, which was the original
+how to meta analyze microbiome data article from lozupone et al in 2012); two 
+papers that do pan enviromental comparisons (10.1371/journal.pcbi.1004468, 
+10.1073/pnas.1000080107), one microbiome-metabolite comparison 
+(10.1186/s40168-021-01149-z), and one interspecies comparison 
+(10.1371/journal.pone.0062578).
+
+I'd also like to look at overlaps.
 
 ```{r}
-num.studies %>% 
-  group_by(num_samples_cat) %>% count() %>%
-  mutate(., perc = round(n / 60, 2))
+data %>%
+  select(starts_with('meta_purpose.')) %>%
+  rename_with(., .fn = ~str_remove(str_remove(., 'meta_purpose.'), '\\.')
+               , .cols=everything()) %>%
+  mutate(., purpose_code = (population_synthesis * 2 + 
+                            replication_validation * 4 + 
+                            core_microbiome * 8 + 
+                            other * 16 + 
+                            not_described * 32)
+         , purpose = case_when(purpose_code == 2 ~ 'population_synthesis'
+                              ,purpose_code == 4 ~ 'replication_validation'
+                              ,purpose_code == 6 ~ 'population_synthesis + replciation_validation'
+                              ,purpose_code == 8 ~ 'core_microbiome'
+                              ,purpose_code == 10 ~ 'population_synthesis + core_microbiome'
+                              ,purpose_code == 16 ~ 'other'
+                              )
+         
+         ) %>%
+  group_by(purpose) %>% 
+  count() %>%
+  ungroup() %>%
+  mutate(., p = round(n / 60, 2) * 100) %>%
+  reactable()
 ```
-```{r}
-num.studies %>% select(num_studies_1o) %>%
-  filter(!is.na(num_studies_1o)) %>%
-  summarise(mean = mean(num_studies_1o)
-           ,std = sd(num_studies_1o)
-           ,min = min(num_studies_1o)
-           ,q1 = quantile(num_studies_1o, 0.25)
-           ,median = quantile(num_studies_1o, 0.5)
-           ,q3 = quantile(num_studies_1o, 0.75)
-           ,max = max(num_studies_1o)
-           , count = n())
-          
-```
-```{r}
-num.studies %>% select(num_studies_valid) %>%
-  filter(!is.na(num_studies_valid)) %>%
-  summarise(mean = mean(num_studies_valid)
-           ,std = sd(num_studies_valid)
-           ,min = min(num_studies_valid)
-           ,q1 = quantile(num_studies_valid, 0.25)
-           ,median = quantile(num_studies_valid, 0.5)
-           ,q3 = quantile(num_studies_valid, 0.75)
-           ,max = max(num_studies_valid)
-           ,count = n()
-  )
-```
+
+## Enviroment
 
 ```{r}
-num.studies %>% 
-  group_by(num_studies_cat) %>% count() %>%
-  mutate(., perc = round(n / 60, 2))
+table1[['enviroment']] <- 
+  data %>% 
+  group_by(envo) %>% count() %>%
+  ungroup() %>%
+  mutate(., question = 'Enviroment'
+          , p = round(n / dim(data)[1], 2) * 100) %>%
+  rename(all_of(c(response = 'envo'))) %>%
+  select(c(question, response, n, p)) %>%
+  arrange(desc(n))
 ```
+
+## Body Site
+
+We can also look at the body site counts and see how many samples were
+analyzed by body site.
 
 ```{r}
-num.studies %>% 
-  mutate(., validation = tolower(validation)) %>%
-  group_by(validation) %>% count() %>%
-  mutate(., perc = round(n / 60, 2))
+table1[['bodysite']] <- 
+  data %>%
+  select(c(envo, starts_with('envo_bodysite.'))) %>%
+  mutate(., human = ifelse(grepl('human', envo), 'human', 'pan_envo')) %>%
+  group_by(human) %>% 
+  summarise(., pan_envo = n()
+             , gut = sum(`envo_bodysite.gut.`)
+             , oral = sum(`envo_bodysite.oral.`)
+             , skin = sum(`envo_bodysite.skin.`)
+             , urogenital = sum(`envo_bodysite.urogenital.`)
+             , airway = sum(`envo_bodysite.airway.`)
+             ) %>%
+  ungroup() %>%
+  pivot_longer(cols=-c(human), names_to = 'envo', values_to = 'n') %>%
+  filter(., (human == envo) | ((human == 'human') & (envo != 'pan_envo'))) %>%
+  arrange(human, desc(n)) %>%
+  mutate(., question = 'envo bodysite'
+           , p = round(n / dim(data)[1], 2) * 100) %>%
+  rename(all_of(c(response='envo'))) %>%
+  select(c(question, response, n, p))
+```
+```{r}
+other.sites <- c('airway', 'oral', 'skin', 'urogenital', 'oral and airway')
+data %>% 
+  mutate(., envo_bodysite_tidy2 = case_when(envo_bodysite_tidy %in% other.sites ~ 'other sites'
+                                           ,.default = envo_bodysite_tidy)
+          ) %>%
+  group_by(envo_bodysite_tidy2) %>% 
+  count() %>% 
+  ungroup() %>%
+  mutate(., p = round(n / 60, 2) * 100) %>%
+  reactable()
+```
+## Number of data sets
+
+```{r}
+table1[['num_datasets']] <- 
+  data %>% 
+  select(c(doi, num_studies_1o)) %>%
+  mutate(., num_study_cat = case_when(is.na(num_studies_1o) ~ 'E.Not reported'
+                                     ,num_studies_1o <= 5 ~ 'A.Less than 5'
+                                     ,num_studies_1o <= 10 ~ 'B.6-10'
+                                     ,num_studies_1o <= 15 ~ 'C.11-15'
+                                     ,num_studies_1o > 15 ~ 'D.15 or more'
+                                     )
+          , question = 'Number of datasets included'
+          ) %>%
+  group_by(question, num_study_cat) %>%
+  count() %>%
+  ungroup() %>%
+  rename(., all_of(c(response = 'num_study_cat'))) %>%
+  mutate(., p = round(n / dim(data)[1], 2) * 100
+          , response = str_split_i(response, '\\.', -1)
+          )
 ```
 
+## Numer of samples included
 
-# Dataset descriptions
+```{r}
+table1[['num_samples']] <- 
+  data %>% 
+  select(c(doi, num_samples_1o)) %>%
+  mutate(., num_sample_cat = case_when(is.na(num_samples_1o) ~ 'E.Not reported'
+                                      ,num_samples_1o <= 500 ~ 'A.Less than 500'
+                                      ,num_samples_1o <= 1500 ~ 'B.501-1500'
+                                      ,num_samples_1o <= 2500 ~ 'C.1501-2500'
+                                      ,num_samples_1o > 2500 ~ 'D.More than 2500'
+                                     )
+          , question = 'Number of samples included'
+          ) %>%
+  group_by(question, num_sample_cat) %>%
+  count() %>%
+  ungroup() %>%
+  rename(., all_of(c(response = 'num_sample_cat'))) %>%
+  mutate(., p = round(n / dim(data)[1], 2) * 100
+          , response = str_split_i(response, '\\.', -1)
+          )
+```
 
-## Systematic Appraoch to data
+## Secondary data sets
+
+```{r}
+table1[['valid_yes']] <- 
+  data %>%
+  summarise(., n = sum(validation)
+             , p = round(mean(validation), 2) * 100
+             ) %>%
+  mutate(., question = 'Secondary dataset for validation'
+          , response = '')
+```
+```{r}
+data %>% select(c(validation, num_studies_valid)) %>%
+  filter(., validation == 1) %>%
+  summarise(num_valid = sum(validation)
+          ,num_studies_min = min(num_studies_valid, na.rm = TRUE)
+          ,num_studies_max = max(num_studies_valid, na.rm = TRUE)
+          ) %>%
+  reactable()
+```
+```{r}
+data %>% 
+  select(c(doi, num_studies_1o, validation, num_studies_valid)) %>%
+  filter(., num_studies_1o == 1) %>%
+  reactable()
+```
+## Clear systematic approach to data gathering 
+
+```{r}
+table1[['systematic_approach']] <- 
+  data %>%
+  summarise(., n = sum(systematic_approach)
+             , p = round(mean(systematic_approach), 2) * 100
+             ) %>%
+  mutate(., question = 'Systematic approach to data gathering'
+          , response = '')
+```
+
+## Combine the table
+
+```{r}
+table1 <- 
+  do.call(bind_rows, table1) %>%
+  mutate(., p = round(n / 60, 2) * 100
+          , `Total N (%)` = ifelse(n == 60, '60', paste(n, '(', p, ')', sep=''))) %>%
+  select(c(question, response,  `Total N (%)`))
+```
+```{r, echo = FALSE}
+table1 %>% reactable()
+```
+
+```{r, echo=FALSE, results='hide'}
+res.table[['table1']] <- table1
+```
+
+# Table S2. Dataset Description
+
+```{r}
+table_s1 <- list()
+```
+
+## Purpose
+
+```{r}
+table_s1[['purpose']] <- 
+  data %>% 
+  select(doi, starts_with('meta_purpose')) %>%
+  mutate(., code = (`meta_purpose.population_synthesis.` * 2 + 
+                    `meta_purpose.replication_validation.` * 4 + 
+                    `meta_purpose.core_microbiome.` * 8 + 
+                    `meta_purpose.other.` * 16)
+          , purpose_other = case_when(grepl('method', meta_purpose_other) ~ '(Evalute a new method)'
+                                     ,grepl('technique', meta_purpose_other) ~ '(Evalute a new method)'
+                                     ,grepl('enviromental', meta_purpose_other) ~ '(Enviromental comparison)'
+                                     ,.default = '')
+          , purpose = case_when(code == 2 ~ 'Population synthesis'
+                               ,code == 4 ~ 'Replication or validation'
+                               ,code == 6 ~ 'Population synthesis + Relication or validation'
+                               ,code == 8 ~ 'Core microbiome'
+                               ,code == 10 ~ 'Population synthesis + Core microbiome'
+                               ,code == 16 ~ paste('Other', purpose_other, sep=' ')
+                               )
+          ) %>%
+  select(c(doi, purpose))
+```
+
+## Goal
+
+```{r}
+table_s1[['goal']] <- 
+  data %>% 
+  select(doi, starts_with('meta_goal')) %>%
+  mutate(., code = (`meta_goal.microbiome_outcome.` * 2 + 
+                    `meta_goal.microbiome_exposure.` * 4 + 
+                    `meta_goal.assembly.` * 8 + 
+                    `meta_goal.unqiue_microbiome.` * 16 +
+                    `meta_goal.other.` * 32)
+          , goal_other = case_when(grepl('method', meta_goal_other) ~ 'Characterize a method'
+                                  ,grepl('technical', meta_goal_other) ~ 'Characterize a method'
+                                  ,grepl('enviroment', meta_goal_other) ~ 'Pan enviromental comparison'
+                                  ,grepl('mouse', meta_goal_other) ~ 'Multi-species comparison'
+                                  ,.default=meta_goal_other)
+          , goal_other = ifelse(is.na(goal_other), NA, paste('(', str_to_sentence(goal_other), ')', sep=''))
+          , goal = case_when(code == 2 ~ 'Microbiome-outcome relationship'
+                            ,code == 4 ~ 'Microbiome-exposure relationship'
+                            ,code == 6 ~ 'Microbiome-exposure relationship + Microbiome-outcome relationship'
+                            ,code == 8 ~ 'Community assembly and dynamics'
+                            ,code == 12 ~ 'Microbiome-exposure relationship + Community assembly and dynamics'
+                            ,code == 16 ~ 'Characterize a unique microbiome'
+                            ,code == 18 ~ 'Microbiome-outcome relationship + Characterize a unique microbiome'
+                            ,code == 20 ~ 'Microbiome-exposure relationship + Characterize a unique microbiome'
+                            ,code == 24 ~ 'Characterize a unique microbiome + Community assembly and dynamics'
+                            ,code == 32 ~ paste('Other', goal_other)
+                            ,code == 34 ~ paste('Microbiome-outcome relationship + Other', goal_other)
+                            ,code == 36 ~ paste('Microbiome-exposure relationship + Other', goal_other)
+                            ,code == 40 ~ paste('Community assembly and dynamics + Other', goal_other)
+                            ,.default = as.character(code)
+                            )
+          ) %>%
+  select(doi, goal)
+```
+
+## Enviroment and Body site
+
+```{r}
+table_s1[['enviroment']] <- 
+  data %>%
+  select(doi, envo, envo_bodysite_tidy) %>%
+  mutate(., enviroment = ifelse(envo == 'human and host', 'human and host gut', envo_bodysite_tidy)
+          ) %>%
+  select(c(doi, enviroment))
+```
+
+## Number of studies, samples, and validation
+
+```{r}
+table_s1[['counts']] <- 
+  data %>%
+  select(c(doi, starts_with('num'), validation, systematic_approach)) %>%
+  mutate_at(., .vars=vars(starts_with('num'))
+             , .funs=~ifelse(is.na(.), 'missing', as.character(.))
+             ) %>%
+  mutate(., `Validation` = case_when(validation == 0 ~ 'No'
+                                    ,validation == 1 ~ paste('Yes (n=', num_studies_valid, ')', sep='')
+                                    )
+          , `Systematic approach to dataset selection` = case_when(systematic_approach == 0 ~ 'No'
+                                                                   ,systematic_approach == 1 ~ 'Yes')
+          ) %>%
+  rename(all_of(c(`Number of datasets` = 'num_studies_1o'
+                 ,`Number of samples` = 'num_samples_1o'))
+         ) %>%
+  select(doi, `Number of datasets`, `Number of samples`, `Validation`, 
+         `Systematic approach to dataset selection`)
+```
+
+## Table pipeline
+
+```{r}
+table_s1[['table_method']] <- 
+  data %>%
+  select(doi, otu_method)
+```
+
+## Combined table S2
+
+```{r}
+table_s1 <- 
+  data %>%
+  select(c(doi, short_cite)) %>%
+  left_join(., table_s1[['purpose']], by = join_by(doi)) %>%
+  left_join(., table_s1[['goal']], by = join_by(doi)) %>%
+  left_join(., table_s1[['enviroment']], by = join_by(doi)) %>%
+  left_join(., table_s1[['counts']], by = join_by(doi)) %>%
+  left_join(., table_s1[['table_method']], by = join_by(doi)) %>%
+  arrange(short_cite)
+```
+```{r, echo=FALSE}
+table_s1 %>% reactable()
+```
+```{r, echo=FALSE, results='hide'}
+supplemental.tables[['table_s2_datasets']] <- table_s1
+```
+
+# Data Set descriptions
+
+## Systematic appraoch to data set collection
 
 Here, we want to understand if there was a systematic approach to data, 
 particularly among studies that were focused on an association with outcome or 
 exposure grouping.
 
-```{r}
-scoping <- data %>%
-  mutate_at(., .vars=vars(starts_with('meta_purpose.'), starts_with('meta_goal.')),
-               .funs=as.numeric) %>%
-   mutate(., other_goal = as.integer(meta_goal.assembly. == 1 | 
-                                     meta_goal.unqiue_microbiome. == 1 | 
-                                     meta_goal.other. == 1)
+We'll start by looking at whether a systematic appraoch was used for 
+data collection at all.
+
+```{r, warning=FALSE}
+table_s3 <- 
+  data %>%
+  select(doi, starts_with('meta_goal.'), envo,
+         meta_in_title_or_abs, systematic_approach, search_described, 
+         prisma_included, study_inclusion, starts_with('design_info')) %>%
+  mutate(., goal_exp_out = ((`meta_goal.microbiome_outcome.` == 1) |
+                            (`meta_goal.microbiome_exposure.` == 1)) * 1
+          , goal_exp_out = ifelse( (envo == 'pan environmental'), 2, goal_exp_out)
           ) %>%
-  mutate(., D = case_when(
-    meta_goal.microbiome_exposure. == 1 & meta_goal.microbiome_outcome. == 0 &  other_goal== 0 ~ "exposure",
-    meta_goal.microbiome_outcome. == 1 & meta_goal.microbiome_exposure. == 0 & other_goal == 0 ~ "outcome",
-    meta_goal.microbiome_outcome. == 1 & meta_goal.microbiome_exposure. == 1 & other_goal == 0 ~ "exposure+ outcome",
-    meta_goal.microbiome_exposure. == 1 & other_goal == 1           ~ "exposure+other",
-    meta_goal.microbiome_outcome. == 1 & other_goal == 1           ~ "outcome+other",
-    other_goal == 1 & meta_goal.microbiome_outcome. == 0 & meta_goal.microbiome_exposure. == 0 ~ "other",
-    TRUE                      ~ NA_character_  # for all other cases
-  ))
+  select(-c(starts_with('meta_goal.'), envo)) %>%
+  filter(., goal_exp_out == 1) %>%
+  mutate(., counter = 1) %>%
+  select(counter, meta_in_title_or_abs, systematic_approach, search_described, 
+         study_inclusion, prisma_included, starts_with('design_info')) %>%
+  select(-c(`design_info.collection_kit.`)) %>%
+  rename_with(., .fn = ~str_remove(str_replace(., 'design_info.', 'design_'), '\\.')
+               , .cols=starts_with('design_info.')
+               ) %>%
+  mutate_at(., .vars=vars(everything())
+             , .funs=as.numeric) %>%
+  summarise(across(everything(), sum)) %>%
+  pivot_longer(., cols=everything(), values_to = 'n') %>%
+  mutate(., p = round(n / 50, 2))
+```
+```{r, echo=FALSE}
+supplemental.tables[['table_s3_systemic']] <- table_s3
+table_s3 %>% reactable()
 ```
 
-We start by pulling out studies where the focus was linking an outcome or 
-exposure to the microbiome. 
-
-```{r}
-counts=table(scoping$D)
-total=60
-percentages <- (counts / total) * 100
-result <- data.frame(Count = counts, Percentage = percentages)
-scoping_exposureoutcome <- scoping %>% filter(D != "other")
-dim(scoping_exposureoutcome)
-```
-
-I want to start by checking how many of these studies desribed themselves as 
-meta analyses either in the title or abstract.
-
-```{r}
-scoping_exposureoutcome <- 
-  scoping %>% filter(., D != 'other') %>%
-  left_join(., citations[, c('covidence_number', 'Abstract')], 
-            join_by(covidence_number)) %>%
-  mutate(., in_title = (grepl('meta-ana', tolower(title)) | 
-                        grepl('meta ana', tolower(title))),
-          , in_abs = (grepl('meta-ana', tolower(Abstract)) | 
-                      grepl('meta ana', tolower(Abstract)))
-    ) %>%
-  mutate(., in_title_or_abstract = (in_title | in_abs) * 1)
-```
-
-I want to know how many of the articles have "meta-ana" or "meta ana" in the 
-title or abstract of the data. 
-
-```{r}
-table(scoping_exposureoutcome$in_title_or_abstract)
-```
-
-```{r}
-mean(scoping_exposureoutcome$in_title_or_abstract)
-```
-
-And then we'll check the number of participants who did anything systematic
-
-```{r}
-table(scoping_exposureoutcome$systematic_approach)
-```
-```{r}
-scoping_exposureoutcome %>% 
-  group_by(systematic_approach, in_title_or_abstract) %>%
-  count() %>%
-  ungroup() %>%
-  pivot_wider(id_cols = systematic_approach,
-              names_from = in_title_or_abstract,
-              values_from = n, 
-              values_fill = 0)
-```
-
-And then we have the search strategy within the "Yes" group:
-```{r}
-scoping_exposureoutcome %>% 
-  mutate(., search_described = replace(search_described, 
-                                       is.na(search_described), 'No')) %>%
-  group_by(systematic_approach, search_described) %>%
-  count()
-```
-
-```{r}
-scoping_exposureoutcome %>% 
-  mutate(., search_described = replace(search_described, 
-                                       is.na(search_described), 'No')) %>%
-  group_by(search_described) %>%
-  count()
-```
-
-Whether a PRISMA diagram was included:
-```{r}
-scoping_exposureoutcome %>% 
-  mutate(., prisma_included = replace(prisma_included, 
-                                       is.na(prisma_included), 'No')) %>%
-  group_by(systematic_approach, prisma_included) %>%
-  count()
-```
-
-```{r}
-scoping_exposureoutcome %>% 
-  mutate(., prisma_included = replace(prisma_included, 
-                                       is.na(prisma_included), 'No')) %>%
-  group_by(prisma_included) %>%
-  count()
-```
-
-And whether the inclusion/exclusion criteria were described. 
-```{r}
-scoping_exposureoutcome %>% 
-  mutate(., study_inclusion = replace(study_inclusion, 
-                                       is.na(study_inclusion), 'No')) %>%
-  group_by(systematic_approach, study_inclusion) %>%
-  count()
-```
-```{r}
-scoping_exposureoutcome %>% 
-  mutate(., study_inclusion = replace(study_inclusion, 
-                                       is.na(study_inclusion), 'No')) %>%
-  group_by(study_inclusion) %>%
-  count()
-```
-
-And then I'd like to pull out the data sets that described thesmelves a meta analyses
-but were performed for replication.
-
-```{r}
-scoping %>% 
-  left_join(., citations[, c('covidence_number', 'meta_in_title_abs')],
-            by = join_by(covidence_number)) %>%
-  filter(., meta_in_title_abs == 1) %>% 
-  filter(., meta_purpose.replication_validation. == 1) %>%
-  select(., c(doi, title))
-
-```
-## Elements Described
-
-We also want to know what information was summarized about the included data sets.
-
-### Design information 
-
-The study design for each data set.
-```{r}
-table(scoping_exposureoutcome$design_info.population.)
-```
-
-### Sampling method
-
-Sample collection
-```{r}
-table(scoping_exposureoutcome$design_info.sampling_method.)
-```
- 
-### Extraction Kit
-```{r}
-table(scoping_exposureoutcome$design_info.extraction_kit.)
-```
-### Number of hypervariable regions
-
-```{r}
-table(scoping_exposureoutcome$design_info.hypervariable_region.)
-```
-
-### Sequencers used
-```{r}
-table(scoping_exposureoutcome$design_info.sequencer.)
-```
 # Data Sources
 
 Look at data sources and clean up the data 
@@ -465,64 +542,22 @@ column.names <- c(SRA = 'sources_1o.SRA.'
                   ,other_freetext  = 'sources_1o_other'
                   )
 
-data.sources <- data %>%
-  tibble() %>%
-  select(c(covidence_number, starts_with('sources_1o'))) %>%
-  mutate(., sources_1o_other = ifelse(`sources_1o.not_described.` == 'EBI', 
-                                      paste(sources_1o_other, 'ENA'),
-                                      sources_1o_other)
-              , sources_1o.not_described. = ifelse(sources_1o.not_described. == 'EBI', 0,
-                                                   sources_1o.not_described.)
-              ) %>%
-  mutate_at(., .vars=vars(starts_with('sources_1o.')), .funs=as.numeric) %>%
-  mutate_at(., .vars=vars(starts_with('sources_1o.')), ~replace(., is.na(.), 0)) %>%
-  rename_with(., .fn = ds.rename, .cols = contains('sources_1o.')) %>%
-  mutate(., sra_ena = ((SRA + ena) > 0) * 1)
-```
-
-### Open and closed data sources
-
-I wnat the total number of data sources and the percentage
-
-```{r}
-data.sources %>%
-  select(consortium_authors:not_described) %>%
-  summarise(across(consortium_authors:not_described, sum))
+data.sources <- 
+  data %>%
+  select(c(doi, starts_with('sources_1o'))) %>%
+  rename_with(., .fn = ds.rename, .cols = contains('sources_1o.')) #%>%
+  #mutate(., sra_ena = ((SRA + ena) > 0) * 1)
 ```
 ```{r}
 data.sources %>%
-  select(consortium_authors:not_described) %>%
-  summarise(across(consortium_authors:not_described, mean)) %>%
-  mutate_all(., ~round(., 3) * 100)
-```
-We consider SRA, ENA, Qiita, and MG-RAST as open source. 
-
-```{r}
-data.sources %>%
-    mutate(., open_source = ((SRA + ena + mg_rast + qiita) > 0) * 1
-          , closed_source = ((request_authors + consortium_authors) > 0) * 1
-         ) %>%
-  mutate(., only_open = ((open_source == 1) & ((closed_source + other + not_described) == 0)) * 1
-          , only_closed = ((closed_source == 1) & ((open_source + other + not_described) == 0)) * 1
-          , open_other = (((open_source + other) > 0) & ((closed_source + not_described) == 0)) * 1
-          , closed_other = (((closed_source + other) > 0) & ((open_source + not_described) == 0)) * 1
-          ) %>%
-  summarize(across(open_source:closed_other, sum)) %>%
-  pivot_longer(., everything(), names_to = 'data_type', values_to = 'count') %>%
-  mutate(., percent = round(count / dim(data.sources)[1], 3))
+  select(c(consortium_authors, request_authors, insdc, mg_rast, qiita, other, 
+           any_open, any_closed, all_open, not_described)) %>%
+  summarise(across(everything(), sum)) %>%
+  pivot_longer(., cols=everything(), values_to = 'n') %>%
+  mutate(., p = round(n / 60, 2))
 ```
 
-We also want to look at the "other" sources
-
-```{r}
-data.sources %>%
-  filter(., (other == 1) | !is.na(sources_1o_other)) %>%
-  select(., sources_1o_other)
-```
-
-
-### Upset of Data Sources
-
+## Upset of data sources
 
 We'll generate an upset plot for  5 data sources: 
 
@@ -537,10 +572,10 @@ source.sets <- c("consortium_authors",
                  "request_authors", 
                  "mg_rast", 
                  "qiita", 
-                 "sra_ena")
+                 "insdc")
 ```
 
-The UpSet plot is configured with a specific ratio for the main bar,and the order 
+he UpSet plot is configured with a specific ratio for the main bar,and the order 
 of elements is determined by degree.
 The sizes of the points and lines in the plot are adjusted for visibility. 
 The order of the sets is kept as defined (i.e., the order is not changed 
@@ -590,7 +625,7 @@ data.set2 <- sub.sources.upset <- data.sources %>%
                   ,`MG-RAST` = 'mg_rast'
                   ,`Qiita` = 'qiita'
                   ,`Consortium` = 'consortium_authors'
-                  , `SRA/ENA` = 'sra_ena')))
+                  , `SRA/ENA` = 'insdc')))
 
 data.set2
 ```
@@ -613,119 +648,109 @@ upset(data.set2
       ,stripes = c('white', 'white', 'white', 'lightgray', 'lightgray')
       
 )
-ggsave('upset_datasources.png', bg="transparent", width=6, height=3.5, dpi=300)
+ggsave('output/upset_datasources.png', bg="transparent", width=6, height=3.5, dpi=300)
 ```
 
 # Sequencing and data combination
 
-
 ```{r}
-seq.cols <- c("seq_platforms.454.", "seq_platforms.illumina.", 
-              "seq_platforms.ion_torrent.", "seq_platforms.other.", 
-              "seq_platforms_other")
-sequencing.platform <- data %>% 
-  select(all_of(seq.cols)) %>%
-  mutate(., seq_platforms.missing. = (is.na(seq_platforms.454.) & 
-                                      is.na(seq_platforms.illumina.)  & 
-                                      is.na(seq_platforms.ion_torrent.) & 
-                                      is.na(seq_platforms.other.)) * 1)
-sequencing.platform %>% 
-  select(c(seq_platforms.454.:seq_platforms.other., seq_platforms.missing.)) %>%
-  mutate_all(., ~replace(as.numeric(.), is.na(.), 0)) %>%
-  summarize(across(seq_platforms.454.:seq_platforms.missing., sum)) %>% 
-  pivot_longer(cols=everything(), names_to = 'platform', values_to = 'count') %>%
-  mutate(., percent = round(count / 60, 2))
-
-```
-```{r}
-sequencing.platform %>% 
-  filter(seq_platforms.other. == 1) %>%
-  select(seq_platforms_other)
+data %>% 
+  select(c(`design_info.sequencer.`, starts_with('seq_platform'))) %>%
+  mutate(., `seq_platforms.missing.` = (`design_info.sequencer.` == 0) * 1) %>%
+  select(starts_with('seq_platform')) %>%
+  rename_with(., .fn =~str_remove(str_remove(., 'seq_platforms.'), '\\.')
+               , .cols=starts_with('seq_platform')) %>%
+  summarise(across(everything(), sum)) %>%
+  pivot_longer(everything(), values_to = 'n') %>%
+  mutate(., p = round(n / 60, 2) * 100) %>%
+  reactable()
 ```
 
-And then we want the combinations
-
 ```{r}
-sequencing.platform %>% 
-  filter(., seq_platforms.missing. == 0) %>%
-  select(c(seq_platforms.illumina., seq_platforms.454., seq_platforms.ion_torrent.)) %>%
-  group_by(seq_platforms.illumina., seq_platforms.454., seq_platforms.ion_torrent.) %>% 
+table_s4 <- data %>% 
+  select(c(`design_info.sequencer.`, starts_with('seq_platform'))) %>%
+  mutate(., `seq_platforms.missing.` = (`design_info.sequencer.` == 0) * 1) %>%
+  select(starts_with('seq_platform')) %>%
+  rename_with(., .fn =~str_remove(str_remove(., 'seq_platforms.'), '\\.')
+               , .cols=starts_with('seq_platform')) %>%
+  mutate(., code = (illumina * 2 + `454` * 4 + ion_torrent * 8 + missing * 16)
+          , seq_combo = case_when(code == 2 ~ 'Illumina only'
+                                 ,code == 4 ~ '454 only'
+                                 ,code == 6 ~ 'Illumina and 454'
+                                 ,code == 8 ~ 'Ion torrent only'
+                                 ,code == 16 ~ 'missing'
+                                 ,code == 10 ~ 'Illumina and Ion Torrent'
+                                 ,code == 12 ~ '454 and Ion Torrent'
+                                 ,code == 14 ~ 'Illumina, 454, and Ion Torrent'
+                                 )
+         ) %>%
+  group_by(seq_combo) %>% 
   count() %>%
-  mutate(., perc = round(n / 60, 2)) %>%
-  arrange(desc(seq_platforms.illumina.), desc(seq_platforms.454.), desc(seq_platforms.ion_torrent.))
+  ungroup() %>%
+  mutate(., p = round(n / 60, 2) * 100)
+reactable(table_s4)
+```
+```{r, echo=FALSE, results='hide'}
+supplemental.tables[['table_s4_sequencer']] <- table_s4
 ```
 
 # Hypervariable regions
-
-We also want to look at the number of hypervariable regions reported and number of hypervariable regions used. We'll start by pulling out the hypervariable region columns. 
-
-```{r}
-hv.rename <- function(c){
-  c.new <- str_replace(substr(c, 18, 20), pattern='[.]', '')
-  return(c.new)
-}
-#hv.rename('hypervar_regions.V4.')
-hypervar <- scoping %>%
-  filter(., as.numeric(design_info.hypervariable_region.) == 1) %>%
-  select(contains('hypervar_re')) %>%
-  rename_with(., .fn = hv.rename, .cols = contains('.V')) %>%
-  rename(., c(other='hypervar_regions.Other.')) %>%
-  mutate(., V56 = grepl('V56', hypervar_regions_other) * 1) %>%
-  mutate(., other = replace(other, hypervar_regions_other == 'V56', 0))
-dim(hypervar)
-```
 
 Note the number here is different from the previous because we're looking at
 **all** studies and not just the ones that were more outcome or exposure
 associated.
 
 ```{r}
-hypervar %>% 
-  select(-c(hypervar_regions_other)) %>%
-  select(c(V12:V46, V56, V68, other)) %>%
-  mutate_all(., ~as.numeric(.)) %>%
-  mutate_all(., ~replace(., is.na(.), 0)) %>%
-  summarize(across(V12:other, sum)) %>%
-  pivot_longer(cols = everything(), names_to = 'region', values_to = 'count') %>%
-  mutate(., percent = round(count / 60, 2))
+data %>%
+  mutate(., `hypervar_regions.missing.` = (`design_info.hypervariable_region.` == 0) * 1) %>%
+  select(starts_with('hypervar_regions.')) %>%
+  rename_with(., .fn=~str_remove(str_remove(., 'hypervar_regions.'), '\\.')
+               ) %>%
+  summarise(across(.cols=everything(), .fns=sum)) %>%
+  pivot_longer(., everything(), values_to = 'n') %>%
+  mutate(., p_all = round(n / 60, 2) * 100
+          , p_def = round(n / 50, 2) * 100
+          ) %>%
+  arrange(desc(n)) %>%
+  reactable()
 ```
-
-And then I'd like the number of regions covered.
+And then we'll look at the number of hyper variable regions covered
 
 ```{r}
-hypervar %>%
-  select(-c(hypervar_regions_other)) %>%
-  mutate_all(., ~as.numeric(.)) %>%
-  mutate_all(., ~replace(., is.na(.), 0)) %>%
-  rowwise() %>%
-  mutate(., row_sum = sum(c_across(is.numeric))) %>%
-  mutate(., row_sum2 = case_when((row_sum == 1) ~ '1',
-                                 (row_sum <= 3) ~ '2-3',
-                                 (row_sum > 3) ~ '4 or more')) %>%
-  group_by(row_sum2) %>%
-  count() %>%
-  ungroup() %>%
-  mutate(., `%` = n / sum(n))
+data %>%
+  select(`design_info.hypervariable_region.`, hypervar_regions_count) %>%
+  mutate(., hypervar_count_cat = case_when(`design_info.hypervariable_region.` == 0 ~ 'missing'
+                                          ,hypervar_regions_count == 1 ~ '1'
+                                          ,hypervar_regions_count <= 3 ~ '2-3'
+                                          ,hypervar_regions_count > 3 ~ '4 or more'
+                                          )
+  ) %>% 
+  group_by(hypervar_count_cat) %>% 
+  count() %>% ungroup() %>%
+  mutate(., p_all = round(n / 60, 2) * 100
+          , p_def = round(n / 50, 2) * 100
+          ) %>%
+  reactable()
+         
 ```
 
-And then we're going to build a heatmap across the region combinations and 
-number of studies
+And then, I want to make a heatmpa of the hypervariable regions covered.
 
 ```{r}
-hv.hm <- hypervar %>%
-  select(., -c(hypervar_regions_other)) %>%
-  mutate_all(., ~as.numeric(.)) %>%
-  mutate_all(., ~replace(., is.na(.), 0)) %>%
-  select(c(V12:V46, V56, V68, other)) %>%
+hv.hm <- data %>%
+  filter(., `design_info.hypervariable_region.` == 1) %>%
+  select(starts_with('hypervar_regions.')) %>%
+  rename_with(., .cols = starts_with('hypervar_regions.')
+               , .fn = ~str_remove(str_remove(., 'hypervar_regions.'), '\\.')
+              ) %>%
   group_by(across(everything())) %>%
   summarise(Count = n(), .groups = 'drop') %>%
   filter(Count > 0) %>%
   arrange(., desc(Count)) %>%
-  mutate(., row_id = 1:length(Count)) %>%
-  mutate(., row_id = max(row_id) - row_id + 1)
+  mutate(., row_id = 1:length(Count)
+          , row_id = max(row_id) - row_id + 1)
 
 ```
-
 
 And then we make a heat map of regions which is unattractive
 ```{r}
@@ -757,6 +782,7 @@ heatmap_plot <- hv.hm %>%
 heatmap_plot
 ```
 
+
 And a barplot with the number of studies that used
 each combination of hypervariable regions.
 
@@ -782,118 +808,509 @@ region.barplot <- hv.hm %>%
 region.barplot
 ```
 
-
 ```{r}
 combined_plot <- heatmap_plot + region.barplot + 
   plot_layout(ncol = 2, widths = c(2, 1))
 
 combined_plot
 
-ggsave("combinedplot1.png", bg="transparent", width = 6, height = 6, dpi = 300)
+ggsave("output/combinedplot1.png", bg="transparent", width = 6, height = 6, dpi = 300)
 ```
 
-# Table Construction Method
+# Feature Table construction methods
 
-We'll code the table construction methods.
+We coded the table construction methods consistently in cleaning. But, let's
+do an overview?
 
 ```{r}
-table.type <- data %>%
-  column_to_rownames('doi') %>%
-  select(c(otus, asvs, starts_with('otu_type'))) %>%
-  mutate_at(., .vars=vars(starts_with('otu_type.')), .funs=as.numeric) %>%
-  mutate(., otu_type = case_when(
-    ((otus == 'No') & (asvs == 'No')) | (is.na(otus) & is.na(asvs)) ~ 'neither',
-    `otu_type.open_ref.`== 1 & `otu_type.de_novo.`!= 1 & `otu_type.closed_ref.`!= 1 ~ "open reference",
-    `otu_type.de_novo.`==1 & `otu_type.open_ref.`!= 1 & `otu_type.closed_ref.`!=1 ~ "de novo",
-    `otu_type.closed_ref.`==1 & `otu_type.de_novo.`!=1 & `otu_type.open_ref.` != 1 ~ "closed reference",
-    ((`otu_type.de_novo.` == 1 & `otu_type.closed_ref.` == 1)) ~ 'mixed',
-    (asvs == 'Yes' & otus != "Yes") ~ "asvs",
-    `otu_type.unclear.` == 1 | `otu_type.not_described.` == 1 ~ 'unclear',
-    .default = 'help'
-    )
-   ) %>%
- mutate(., den_clus = case_when(
-   (otus == "Yes" & asvs != "Yes") | (otus == "Yes" & asvs == NA) ~ "otus",
-   (asvs == 'Yes' & otus != "Yes") | (asvs == "Yes" & otus == NA)~ "asvs",
-   (asvs == "Unclear/Not described") & (otus == "Unclear/Not described") ~ "unclear",
-   (otus == "Yes" & asvs == "Yes") ~ "both"
-   )
+data %>%
+  select(c(doi, common_pipeline, taxa_profile, asvs, otus, qual_filter, 
+           starts_with('otu_type.'), table_construction1, otu_method, 
+           table_feature_level)) %>%
+  group_by(table_construction1) %>%
+  count() %>%
+  ungroup() %>%
+  mutate(.,  p = round(n / 60, 2) * 100
+          , order_ = c(2, 1, 5, 6, 3, 4)
+          ) %>%
+  arrange(order_) %>%
+  reactable()
+```
+
+```{r}
+table_s5 <- 
+  data %>%
+  select(c(doi, common_pipeline, taxa_profile, asvs, otus, qual_filter, 
+           starts_with('otu_type.'), table_construction1, otu_method, 
+           table_feature_level)) %>%
+  group_by(otu_method) %>%
+  count() %>%
+  ungroup() %>%
+  mutate(.,  p = round(n / 60, 2) * 100
+          , order_ = c(6, 4, 1, 2, 8, 9, 3, 7, 10, 5)
+          ) %>%
+  arrange(order_) %>%
+  select(-c(order_))
+```
+```{r, echo = FALSE}
+table_s5 %>% reactable()
+```
+```{r, echo=FALSE, results='hide'}
+supplemental.tables[['tables_s5_table_methods']] <- table_s5
+```
+```{r}
+data %>% select(doi, otu_method) %>%
+  filter(., otu_method == 'OTUs multi')
+```
+
+# Feature table and levels
+
+```{r}
+defined.levels <- data %>% 
+  select(c(doi, table_feature_level, hypervar_regions_count,
+           `analyses_perf.alpha.`,  alpha_level_min, 
+           `analyses_perf.beta.`,  beta_level_min,
+           `analyses_perf.da.`, da_level_min)) %>%
+  rename_with(., .fn = ~str_remove(str_remove(., 'analyses_perf.'), '\\.')
+               , .cols = starts_with('analyses')) %>%
+  mutate(., hv_count = case_when(hypervar_regions_count == 0 ~ NA
+                                ,hypervar_regions_count == 1 ~ 1
+                                ,hypervar_regions_count > 1 ~ 2)
+          , alpha_feat = case_when(alpha == 0 ~ NA
+                                  ,alpha_level_min == 'not described' ~ NA
+                                  ,alpha_level_min == 'feature' ~ 'feature'
+                                  ,.default = 'collapse')
+          , alpha = case_when(is.na(alpha_feat) ~ 'no'
+                             ,alpha == 0 ~ 'no'
+                             ,alpha == 1 ~ 'yes')
+          , beta_feat = case_when(beta == 0 ~ NA
+                                ,beta_level_min == 'no described' ~ NA
+                                ,beta_level_min == 'feature' ~  'feature'
+                                ,.default = 'collapse')
+          , beta = case_when(is.na(beta_feat) ~ 'no'
+                             ,beta == 0 ~ 'no'
+                             ,beta == 1 ~ 'yes')
+          , da_feat = case_when(da == 0 ~ NA
+                                ,da_level_min == 'not described' ~ NA
+                                ,da_level_min == 'feature' ~  'feature'
+                                ,.default = 'collapse')
+          , da = case_when(is.na(da_feat) ~ 'no'
+                             ,da == 0 ~ 'no'
+                             ,da == 1 ~ 'yes')
+          , table_feat = case_when(is.na(table_feature_level) ~ NA
+                                  ,table_feature_level == 0 ~ 'ASV or de novo'
+                                  ,table_feature_level == 1 ~ 'closed ref OTUs'
+                                  )
+          ) %>%
+  select(c(table_feat, hv_count, alpha, alpha_feat, beta, beta_feat, da, da_feat)) %>%
+  mutate(., keeper = (((!is.na(table_feat) & (!is.na(hv_count)))) & 
+                       (!is.na(alpha_feat) | !is.na(beta_feat) | !is.na(da_feat)))
+          , spacer = 1
+          , done = 'all'
+          ) %>%
+  filter(., keeper) %>%
+  select(-c(keeper))
+```
+```{r, warning=FALSE}
+list(
+  table_feat = defined.levels %>% group_by(table_feat) %>% count() %>% ungroup()
+ ,hv_count = defined.levels %>% group_by(hv_count) %>% count() %>% ungroup()
+ ,alpha = defined.levels %>% group_by(alpha) %>% count() %>% ungroup()
+ ,beta = defined.levels %>% group_by(beta) %>% count() %>% ungroup()
+ ,da = defined.levels %>% group_by(da) %>% count() %>% ungroup()
   ) %>%
-  mutate(., otu_type2 = replace(otu_type == "closed reference", 
-                                (otu_type %in% c('unclear', 'mixed', "open reference")) | is.na(otu_type),
-                                NA))
+  rbindlist(, idcol = 'column', fill=FALSE) %>%
+  mutate(., p = round(n / 31, 2) * 100) %>%
+  reactable()
 ```
 
 ```{r}
-table(table.type$otu_type)
+fisher.wrap.p <- function(df, c1, c2){
+  f.res <- df %>% 
+    ungroup() %>%
+    select(all_of(c(c1, c2))) %>%
+    fisher.test()
+  return(f.res$p.value)
+}
 ```
-And the I'd like to look at the 10 papers wiwth unclear clustering methods.
 
 ```{r}
-table.type %>% filter(., otu_type == 'unclear')
+hv.table.analysis <- list(
+  defined.levels %>%
+    group_by(hv_count, alpha) %>% count() %>% ungroup() %>%
+    rename(all_of(c(group = 'hv_count'))) %>%
+    pivot_wider(id_cols = alpha, names_from = group, values_from = n, values_fill = 0) %>%
+    mutate(., fisher.p = fisher.wrap.p(., '1', '2')) %>%
+    pivot_longer(cols=c(`1`, `2`), names_to = 'group', values_to = 'n') %>%
+    mutate(., analysis = 'alpha', grouper = 'hv_count') %>%
+    rename(all_of(c(performed='alpha'))) %>%
+    group_by(group) %>%
+    mutate(., group_total = sum(n)) %>%
+    ungroup()
+  ,defined.levels %>%
+    group_by(hv_count, beta) %>% count() %>% ungroup() %>%
+    rename(all_of(c(group = 'hv_count'))) %>%
+    pivot_wider(id_cols = beta, names_from = group, values_from = n, values_fill = 0) %>%
+    mutate(., fisher.p = fisher.wrap.p(., '1', '2')) %>%
+    pivot_longer(cols=c(`1`, `2`), names_to = 'group', values_to = 'n') %>%
+    mutate(., analysis = 'beta', grouper = 'hv_count') %>%
+    rename(all_of(c(performed='beta'))) %>%
+    group_by(group) %>%
+    mutate(., group_total = sum(n)) %>%
+    ungroup()
+  ,defined.levels %>%
+    group_by(hv_count, da) %>% count() %>% ungroup() %>%
+    rename(all_of(c(group = 'hv_count'))) %>%
+    pivot_wider(id_cols = da, names_from = group, values_from = n, values_fill = 0) %>%
+    mutate(., fisher.p = fisher.wrap.p(., '1', '2')) %>%
+    pivot_longer(cols=c(`1`, `2`), names_to = 'group', values_to = 'n') %>%
+    mutate(., analysis = 'da', grouper = 'hv_count') %>%
+    rename(all_of(c(performed='da'))) %>%
+    group_by(group) %>%
+    mutate(., group_total = sum(n)) %>%
+    ungroup()
+    ) %>%
+  rbindlist() %>%
+  select(c(analysis, performed, grouper, group, n, group_total, fisher.p))  
+```
+```{r}
+table.analysis <- list(
+  defined.levels %>%
+    group_by(table_feat, alpha) %>% count() %>% ungroup() %>%
+    rename(all_of(c(group = 'table_feat'))) %>%
+    pivot_wider(id_cols = alpha, names_from = group, values_from = n, values_fill = 0) %>%
+    mutate(., fisher.p = fisher.wrap.p(., 'ASV or de novo', 'closed ref OTUs')) %>%
+    pivot_longer(., cols=c(`ASV or de novo`, `closed ref OTUs`)
+                  , names_to = 'group'
+                  , values_to = 'n') %>%
+    mutate(., analysis = 'alpha', grouper = 'table_feat') %>%
+    rename(all_of(c(performed='alpha'))) %>%
+    group_by(group) %>%
+    mutate(., group_total = sum(n)) %>%
+    ungroup()
+  ,defined.levels %>%
+    group_by(table_feat, beta) %>% count() %>% ungroup() %>%
+    rename(all_of(c(group = 'table_feat'))) %>%
+    pivot_wider(id_cols = beta, names_from = group, values_from = n, values_fill = 0) %>%
+    mutate(., fisher.p = fisher.wrap.p(., 'ASV or de novo', 'closed ref OTUs')) %>%
+    pivot_longer(., cols=c(`ASV or de novo`, `closed ref OTUs`)
+                  , names_to = 'group'
+                  , values_to = 'n') %>%
+    mutate(., analysis = 'beta', grouper = 'table_feat') %>%
+    rename(all_of(c(performed='beta'))) %>%
+    group_by(group) %>%
+    mutate(., group_total = sum(n)) %>%
+    ungroup()
+  ,defined.levels %>%
+    group_by(table_feat, da) %>% count() %>% ungroup() %>%
+    rename(all_of(c(group = 'table_feat'))) %>%
+    pivot_wider(id_cols = da, names_from = group, values_from = n, values_fill = 0) %>%
+    mutate(., fisher.p = fisher.wrap.p(., 'ASV or de novo', 'closed ref OTUs')) %>%
+    pivot_longer(., cols=c(`ASV or de novo`, `closed ref OTUs`)
+                  , names_to = 'group'
+                  , values_to = 'n') %>%
+    mutate(., analysis = 'da', grouper = 'table_feat') %>%
+    rename(all_of(c(performed='da'))) %>%
+    group_by(group) %>%
+    mutate(., group_total = sum(n)) %>%
+    ungroup()
+  ) %>%
+  rbindlist() %>%
+select(c(analysis, performed, grouper, group, n, group_total, fisher.p))
+```
+```{r}
+all.tables <- list(
+   defined.levels %>%
+    group_by(done, alpha) %>% count() %>% ungroup() %>%
+    rename(all_of(c(group = 'done'))) %>%
+    mutate(., analysis = 'alpha', grouper = 'done') %>%
+    rename(all_of(c(performed='alpha'))) %>%
+    group_by(group) %>%
+    mutate(., group_total = sum(n)) %>%
+    ungroup()
+  ,defined.levels %>%
+    group_by(done, beta) %>% count() %>% ungroup() %>%
+    rename(all_of(c(group = 'done'))) %>%
+    mutate(., analysis = 'beta', grouper = 'done') %>%
+    rename(all_of(c(performed='beta'))) %>%
+    group_by(group) %>%
+    mutate(., group_total = sum(n)) %>%
+    ungroup()
+  ,defined.levels %>%
+    group_by(done, da) %>% count() %>% ungroup() %>%
+    rename(all_of(c(group = 'done'))) %>%
+    mutate(., analysis = 'da', grouper = 'done') %>%
+    rename(all_of(c(performed='da'))) %>%
+    group_by(group) %>%
+    mutate(., group_total = sum(n)) %>%
+    ungroup()
+  ) %>%
+  rbindlist() %>%
+  mutate(., fisher.p = NA) %>%
+  select(c(analysis, performed, grouper, group, n, group_total, fisher.p))
+```
+```{r}
+table_s6 <- 
+  bind_rows(all.tables, hv.table.analysis, table.analysis) %>%
+  filter(., performed == 'yes') %>%
+  pivot_longer(., cols=c(n, fisher.p)
+                , names_to = 'stat'
+                , values_to = 'value') %>%
+  mutate(group = ifelse(stat == 'fisher.p', 'p', group)) %>%
+  select(-c(stat)) %>%
+  distinct(., analysis, grouper, group, value, .keep_all = TRUE) %>%
+  filter(., (grouper != 'done') | (group == 'all'))  %>%
+  mutate(., tidy = case_when(group == 'p' ~ ifelse(value >= 0.01, sprintf('%1.2f', value), '<0.01')
+                            ,.default = paste(value, ' (', round(value / group_total, 2) * 100, '%)', sep='')
+                            )
+          , grouper = case_when(grouper == 'done' ~ 'all'
+                               ,grouper == 'hv_count' ~ 'number of hypervariable regions'
+                               ,grouper == 'table_feat' ~ 'feature table construction method'
+                               ,.default = grouper)
+          , group = case_when(group == '1' ~ '1 region'
+                             ,group == '2' ~ '2 or more regions'
+                             ,.default = group)
+          , total_tidy = paste('(n=', group_total, ')', sep='')
+          , col_name = case_when(grouper == 'all' ~ paste(grouper, total_tidy, sep=';')
+                                  ,group == 'p' ~ paste(grouper, group, sep=';')
+                                  ,.default=paste(grouper, group, total_tidy, sep=';')
+                                  )
+          ) %>%
+  pivot_wider(id_cols=analysis, names_from = col_name, values_from = tidy) %>%
+  select(c(analysis, `all;(n=31)`, 
+           `number of hypervariable regions;1 region;(n=10)`,
+           `number of hypervariable regions;2 or more regions;(n=21)`,
+           `number of hypervariable regions;p`,
+           `feature table construction method;ASV or de novo;(n=18)`,
+           `feature table construction method;closed ref OTUs;(n=13)`,
+           `feature table construction method;p`)) #%>%
+```
+```{r}
+supplemental.tables[['table_s6_defined_hv_regions']] <- table_s6
+reactable(table_s6)
+```
+
+
+```{r}
+counter.wrap <- function(df, table, analysis){
+  wrapped <- df %>% 
+    rename(all_of(c(feat = paste(analysis, 'feat', sep='_')))) %>%
+    group_by(hv_count, feat) %>%
+    count() %>%
+    ungroup() %>%
+    mutate(., hv_count = as.character(hv_count)
+            , total = sum(n)) %>%
+    pivot_wider(., id_cols = c(hv_count, total)
+               , names_from = feat
+               , values_from = n
+               , values_fill = 0) %>%
+    mutate(., fisher.p = fisher.wrap.p(., 'feature', 'collapse')
+            , table = table
+            , analysis = analysis
+            ) %>%
+    pivot_longer(., cols=c(feature, collapse)
+                , names_to = 'level'
+                , values_to = 'n') %>%
+    mutate(.#, fisher.p = case_when(fisher.p < 0.01 ~ '<0.01'
+            #                      ,fisher.p == 1 ~ '1.00'
+            #                      ,.default = as.character(round(fisher.p, 2))
+            #                      )
+          , p = round(n / total, 2) * 100
+          )
+    return(wrapped)
+}
+```
+
+```{r}
+defined.levels %>%
+  filter(., alpha == 'yes') %>%
+  group_by(hv_count, table_feat, alpha_feat) %>% count() %>%
+  pivot_wider(id_cols = c(hv_count, table_feat), names_from = alpha_feat, values_from = n, values_fill = 0) %>%
+  mutate(., fisher.p = fisher.wrap.p(., 'feature', 'collapse')
+          , spacer = NA)
+```
+```{r}
+defined.levels %>%
+  filter(., beta == 'yes') %>%
+  group_by(hv_count, table_feat, beta_feat) %>% count() %>%
+  pivot_wider(id_cols = c(hv_count, table_feat), names_from = beta_feat, values_from = n, values_fill = 0) %>%
+  mutate(., fisher.p = fisher.wrap.p(., 'feature', 'collapse')
+          , spacer = NA)
+```
+```{r}
+defined.levels %>%
+  filter(., da == 'yes') %>%
+  group_by(hv_count, table_feat, da_feat) %>% count() %>%
+  pivot_wider(id_cols = c(hv_count, table_feat), names_from = da_feat, values_from = n, values_fill = 0) %>%
+  mutate(., fisher.p = fisher.wrap.p(., 'feature', 'collapse')
+          , spacer = NA)
+```
+
+```{r}
+overlap.by.feature <- list(
+  defined.levels %>%
+    filter(., alpha == 'yes') %>%
+    counter.wrap(., 'all', 'alpha')
+  ,defined.levels %>%
+    filter(., alpha == 'yes') %>%
+    filter(table_feat == 'closed ref OTUs') %>%
+    counter.wrap(., 'closed_ref_otus', 'alpha')
+  ,defined.levels %>%
+    filter(., alpha == 'yes') %>%
+    filter(table_feat == 'ASV or de novo') %>%
+    counter.wrap(., 'asvs_de_novo', 'alpha')
+  ,defined.levels %>%
+    filter(., beta == 'yes') %>%
+    counter.wrap(., 'all', 'beta')
+  ,defined.levels %>%
+    filter(., beta == 'yes') %>%
+    filter(table_feat == 'closed ref OTUs') %>%
+    counter.wrap(., 'closed_ref_otus', 'beta')
+  ,defined.levels %>%
+    filter(., beta == 'yes') %>%
+    filter(table_feat == 'ASV or de novo') %>%
+    counter.wrap(., 'asvs_de_novo', 'beta')
+  ,defined.levels %>%
+    filter(., da == 'yes') %>%
+    counter.wrap(., 'all', 'da')
+  ,defined.levels %>%
+    filter(., da == 'yes') %>%
+    filter(table_feat == 'closed ref OTUs') %>%
+    counter.wrap(., 'closed_ref_otus', 'da')
+  ,defined.levels %>%
+    filter(., da == 'yes') %>%
+    filter(table_feat == 'ASV or de novo') %>%
+    counter.wrap(., 'asvs_de_novo', 'da')
+  )  %>%
+  rbindlist() %>%
+  mutate(., stat_c = paste(n, ' (', p, '%)', sep='')
+          , stat_p = case_when(fisher.p < 0.01 ~ '<0.01'
+                              ,round(fisher.p, 2) == 1 ~ '1.00'
+                              ,.default = as.character(round(fisher.p, 2))
+                              )
+          ) %>%
+  pivot_longer(., cols=c(stat_c, stat_p)) %>%
+  mutate(., hv_count = ifelse(name == 'stat_p', 'p-value', hv_count)) %>%
+  arrange(table, hv_count) %>%
+  distinct(hv_count, total, table, analysis, level, value) %>%
+  pivot_wider(id_cols = c(analysis, level)
+              ,names_from = c(table, hv_count)
+              ,values_from = value)
+```
+```{r, echo = FALSE}
+overlap.by.feature %>% reactable()
+```
+```{r, echo=FALSE}
+res.table[['table2_defined_hv_table_ana']] <- overlap.by.feature
 ```
 
 # Analyses conducted
 
-`
 ```{r}
-lookup <- c( descriptive="analyses_perf.descriptive."
-            ,alpha_diversity="analyses_perf.alpha."
-            ,beta_diversity="analyses_perf.beta."
-            ,differential_abundance="analyses_perf.differenital_abundance."
-            ,sample_classifier="analyses_perf.sample_classification."
-            ,core_microbiome="analyses_perf.core_microbiome."
-            ,co_occurance="analyses_perf.co_occurance."
-            ,other="analyses_perf.other."
-            )
-analysis.perf <- data %>% 
-  column_to_rownames('doi') %>%
-  select(starts_with('analyses_perf')) %>%
-  rename(all_of(lookup)) %>%
-  filter(., (!(apply(is.na(select(., descriptive:other)), MARGIN = 1, FUN=any))))
-
-analysis.count <- analysis.perf %>%
-  select(-c(analyses_perf_other)) %>%
-  mutate_all(., ~replace(as.numeric(.), is.na(.), 0)) %>%
-  filter(., (apply(., MARGIN = 1, FUN=sum)) > 0)
-
-analysis.count %>%
-  summarize(., across(everything(), sum)) %>%
-  pivot_longer(cols=everything(), names_to = 'analysis', values_to = 'count') %>%
-  mutate(., percent = round(count / 60, 2))
+analysis.count <- 
+  data %>% 
+  filter(., !grepl('pan', envo)) %>%
+  filter(., (`meta_goal.microbiome_outcome.` == 1 ) | (`meta_goal.microbiome_exposure.` == 1)) %>%
+  select(c(doi, starts_with('anal'))) %>%
+  mutate(`analyses_perf.other.` = case_when(is.na(analyses_perf_other) ~ 0
+                                           ,grepl(';', analyses_perf_other) ~ str_count(analyses_perf_other, ';') + `analyses_perf.other.`
+                                           ,grepl(',', analyses_perf_other) ~ str_count(analyses_perf_other, ',') + `analyses_perf.other.`
+                                           ,.default=analyses_perf.other.)
+         ) %>%
+  pivot_longer(cols=starts_with('analyses_perf.')
+              ,names_to = 'analysis'
+              ,values_to = 'performed') %>%
+  group_by(doi) %>%
+  summarise(n = sum(performed)) %>%
+  ungroup()
 ```
-
-And then I also want the number of analyses performed.
-
 ```{r}
-analysis.count %>%
-  mutate(., num.analysis = rowSums(., na.rm = TRUE)) %>%
-  group_by(num.analysis) %>% 
-  count()
+analysis.count %>% 
+  summarise(., mean = round(mean(n), 1)
+             , std = round(sd(n), 1)
+             , min_ = min(n)
+             , q10 = quantile(n, 0.1)
+             , q25 = quantile(n, 0.25)
+             , q50 = quantile(n, 0.50)
+             , q75 = quantile(n, 0.75)
+             , q90 = quantile(n, 0.90)
+             , max_ = max(n)
+             ) %>%
+  pivot_longer(everything()) %>%
+  reactable()
 ```
-
 ```{r}
 analysis.count %>%
-  mutate(., num.analysis = rowSums(., na.rm = TRUE)) %>%
-  summarize(median = quantile(num.analysis, 0.5), 
-            q1 = quantile(num.analysis, 0.25),
-            q3 = quantile(num.analysis, 0.75),
-            geq3 = sum(num.analysis >= 3), 
-            geq3p = mean(num.analysis >= 3))
+  rename(all_of(c(num_analyses = 'n'))) %>% 
+  group_by(num_analyses) %>% 
+  count() %>% 
+  ungroup() %>%
+  mutate(., p = round(n / sum(n), 2)
+          , cum_sum = cumsum(n)
+          , cum_perc = cumsum(n / sum(n))
+          ) %>%
+  reactable()
+```
+```{r}
+analysis.count %>%
+  summarise(., over_3_n = sum(n >= 3)
+             , over_3_p = over_3_n / 50)
+```
+```{r}
+table_s8 <- data %>% 
+  select(c(starts_with('meta_goal.microbiome'), envo, starts_with('analyses_perf.'))) %>%
+  mutate(., multi_envo = (envo == 'pan environmental') * 1
+          , no_exp_out = ((`meta_goal.microbiome_outcome.` + 
+                           `meta_goal.microbiome_exposure.`) == 0) * 1
+          , no_exp_out = ifelse(multi_envo == 1, 0, no_exp_out)
+          ) %>%
+  mutate_at(., .vars=vars(starts_with('analyses_perf.'))
+             , .funs=~case_when(multi_envo == 1 ~ 0
+                               ,no_exp_out == 1 ~ 0
+                               ,.default = .)
+             ) %>%
+  select(c(starts_with('analyses_perf.'), multi_envo, no_exp_out)) %>%
+  summarise(across(everything(), sum)) %>%
+  rename_with(.fn=~str_remove(str_remove(., 'analyses_perf.'), '\\.')) %>%
+  select(c(descriptive, alpha, beta, da, sample_classification, 
+           core_microbiome, co_occurance, other, multi_envo, no_exp_out)) %>%
+  pivot_longer(cols=everything(), values_to = 'n') %>%
+  mutate(., p1 = round(n / 60, 2) * 100
+          , p2 = ifelse(name %in% c('multi_envo', 'no_exp_out'), NA, round(n / 50, 2) * 100)
+          )
+```
+```{r, echo=FALSE}
+supplemental.tables[['table_s8_analysis_performed']] <- table_s8 %>%
+  select(c(name, n, p2))
+table_s8 %>%
+  select(c(name, n, p2)) %>% reactable()
 ```
 
-## Upset Plot
-
-And then I'd like to look at a combination of studies.
+## Analysis Upset
 
 ```{r}
-analy.bool <- analysis.count %>% 
-  mutate_all(., function(x){return(x == 1)})
-ana.overlap <- analy.bool %>% 
-  group_by(., alpha_diversity, beta_diversity, differential_abundance, 
-              sample_classifier, descriptive, core_microbiome, co_occurance) %>% 
+analysis.bool <- 
+  data %>%
+  filter(., !grepl('pan', envo)) %>%
+  filter(., (`meta_goal.microbiome_outcome.` == 1 ) | (`meta_goal.microbiome_exposure.` == 1)) %>%
+  select(c(doi, starts_with('analyses_perf.'))) %>%
+  mutate_at(., .vars=vars(starts_with('analyses_perf.'))
+             , .funs=~(. == 1)
+             ) %>%
+  rename_with(., .cols=starts_with('analyses_perf.')
+               , .fn=~str_remove(str_remove(., 'analyses_perf.'), '\\.')
+              ) %>%
+  select(c(alpha, beta, da, sample_classification)) %>%
+  rename(all_of(c(`alpha diversity` = 'alpha'
+                 ,`beta diversity` = 'beta'
+                 ,`differential abundance` = 'da'
+                 ,`sample classifier` = 'sample_classification'))
+           )
+
+ana.overlap <- analysis.bool %>% 
+  group_by(., `alpha diversity` , `beta diversity`, `differential abundance`, `sample classifier`) %>% 
   count() %>%
-  select(-c())
+  ungroup()
 
 set.names <- c('sample classifier'
               ,'differential abundance'
@@ -916,631 +1333,509 @@ inter.names <- list('alpha diversity'
                    ,c('differential abundance', 'sample classifier')
                    ,'sample classifier'
                    )
-rename <- c(`alpha diversity` = 'alpha_diversity'
-           ,`beta diversity` = 'beta_diversity'
-           ,`differential abundance` = 'differential_abundance'
-           ,`sample classifier` = 'sample_classifier'
-           )
 ```
 ```{r}
-analysis.count %>% 
-  mutate_all(., ~(. == 1)) %>%
-  rename(all_of(rename)) %>%
-  select(all_of(set.names)) %>%
-upset(data = .
-     ,intersect = set.names
-     ,sort_sets = FALSE
-     ,sort_intersections = FALSE
-     ,intersections = inter.names
-     ,width_ratio=0.3,
-     ,keep_empty_groups = FALSE,
-     sort_ratio_numerator = FALSE
-     ,min_size = 1
-     ,min_degree = 1
-     ,name=""
-     ,base_annotations=list("Intersection size" = intersection_size(bar_number_threshold = 1) # show all numbers on top of bars
-                            + scale_y_continuous(expand=expansion(mult=c(0, 0.1))) # add space on top of bars
-                            + theme(panel.grid.major = element_blank(),
-                                  panel.grid.minor = element_blank(),
+  upset(data = analysis.bool
+       ,intersect = set.names
+       ,sort_sets = FALSE
+       ,sort_intersections = FALSE
+       ,intersections = inter.names
+       ,width_ratio=0.3,
+       ,keep_empty_groups = FALSE,
+       sort_ratio_numerator = FALSE
+       ,min_size = 1
+       ,min_degree = 1
+       ,name=""
+       ,base_annotations=list("Intersection size" = intersection_size(bar_number_threshold = 1) # show all numbers on top of bars
+                              + scale_y_continuous(expand=expansion(mult=c(0, 0.1))) # add space on top of bars
+                              + theme(panel.grid.major = element_blank(),
+                                       panel.grid.minor = element_blank(),
                                   axis.line = element_line(colour = 'black'))),
       set_sizes = (upset_set_size() 
                    + theme(axis.ticks.x = element_line())),
       )
-ggsave("upset_analysis.png", bg="transparent", width=6, height=3, dpi=300)
-```
-## Diversity Level
+ggsave("output/upset_analysis.png", bg="transparent", width=6, height=3, dpi=300)
 
-I also want to look at the minimum level where diversity analyses were conducted.
+```
+# Minimum diveristy levels
 
 ```{r}
-div.levels <- data %>%
-  filter(., doi %in% rownames(analysis.count)) %>%
-  column_to_rownames('doi') %>%
-  select(c(starts_with('analyses_perf.'), 
-           starts_with('alpha_level'), 
-           starts_with('beta_level'),
-           starts_with('diff_abund_level'),
-           starts_with('class_level')
-           )) %>%
-  mutate(., beta_level.otu_asv. = replace(`beta_level.otu_asv.`, 
-                                          `beta_level.not_described.` == 'phylotypes', 
-                                          1)
-         , beta_level.not_described. = replace(beta_level.not_described., 
-                                               beta_level.not_described. == 'phylotypes', 
-                                               0)) %>%
-   mutate_all(., ~as.numeric(replace(., is.na(.), '-1'))) %>%
-   mutate(., min_alpha_level = case_when(`alpha_level.otu_asv.`==1 ~ "otu/asv",
-                                         `alpha_level.species.`==1 ~ "species",
-                                         `alpha_level.genus.`==1 ~ "genus",
-                                         `alpha_level.family.`==1 ~ "family",
-                                         `alpha_level.order.`==1 ~ "order",
-                                         `alpha_level.class.` == 1 ~ 'class',
-                                         `alpha_level.phylum.` == 1 ~ "phylum",
-                                        `alpha_level.not_described.` == 1 ~ "unclear")
-           , min_beta_level = case_when(`beta_level.otu_asv.`==1 ~ "otu/asv",
-                                        `beta_level.species.` == 1 ~ "species",
-                                        `beta_level.genus.` ==1 ~ "genus",
-                                        `beta_level.family.`==1 ~ "family",
-                                        `beta_level.order.` == 1 ~ "order",
-                                        `beta_level.class.` ==1 ~ "class",
-                                        `beta_level.phylum.` == 1 ~ "phylum",
-                                        `beta_level.not_described.`==1 ~"unclear")
-          ,min_diff_abund_level=case_when(`diff_abund_level.otu_asv.`==1 ~"otu/asv",
-                                          `diff_abund_level.species.`==1 ~"species",
-                                          `diff_abund_level.genus.`==1 ~"genus",
-                                          `diff_abund_level.family.`==1 ~"family",
-                                          `diff_abund_level.order.`==1 ~"order",
-                                          `diff_abund_level.class.`==1 ~"class",
-                                          `diff_abund_level.phylum.`==1 ~"phylum",
-                                          `diff_abund_level.not_described.` == 1 ~ "unclear")
-          ,min_class_level=case_when(`class_level.otu_asv.`==1~"otu/asv",
-                                     `class_level.species.`==1~"species",
-                                     `class_level.genus.`==1~"genus",
-                                     `class_level.family.`==1~"family",
-                                     `class_level.order.`==1~"order",
-                                     `class_level.class.`==1~"class",
-                                     `class_level.phylum.`==1~"phylum",
-                                     `class_level.not_described.`==1~"unclear")) %>%
-     mutate(., min_alpha_level = replace(min_alpha_level, `analyses_perf.alpha.` == 0, NA)
-             , min_beta_level = replace(min_beta_level, `analyses_perf.beta.` == 0, NA)
-             , min_diff_abund_level = replace(min_diff_abund_level, 
-                                              `analyses_perf.differenital_abundance.` == 0, NA)
-             , min_class_level = replace(min_class_level, `analyses_perf.sample_classification.` == 0, NA))
+table_s9 <- 
+  data %>%
+  select(contains('level_min')) %>%
+  pivot_longer(cols=everything(), values_to = 'level') %>%
+  mutate(., analysis = str_remove(name, '_level_min')
+          , level = case_when(grepl('described', level) ~ 'not described'
+                             ,grepl('no', tolower(level)) ~ 'not analysed'
+                             ,.default = level
+                             )
+          ) %>%
+  group_by(level, analysis) %>% count() %>% ungroup() %>%
+  pivot_wider(id_cols = level, names_from = analysis, values_from = n, values_fill = 0) %>%
+  mutate(., ordered = c(4, 1, 3, 7, 6, 5, 2)) %>%
+  arrange(ordered) %>%
+  select(c(level, alpha, beta, da, class))
 ```
 
-And now that we have the minimum level, we're going to tabulate them...
+```{r, echo=FALSE}
+supplemental.tables[['table_s9_min_level']] <- table_s9
+reactable(table_s9)
+```
+
+# Statistical methods
+
+For the statistical analysis, I want to address three issues. First, I want 
+to look at overarching trends in how studies focused on outcomes and exposures
+in human or human and animal studies address dataset in alpha diversity, beta
+diveristy, and differentiaal abundance analysis. For studies with a sample
+classifier, I want to expand the list to describe validation studies as well.
+
+## Pooled inference
+
+We're going to start by focusing on appraoches in the three methods that let 
+us make inference: alpha diveristy, beta diveristy, and differential abundance.
+
+I'm going to classify techniques into 4 categories:
+
+1. No consideration of study effects
+2. Measure data set effects but do not adjust
+3. Adjust for dataset (fixed, random, statistical meta analysis)
+4. Other approaches (parallel analysis, batch correction, pool across study)
+5. Not described
+6. Not eligible (pan-enviromental, not outcome/exposure associated, did not perform the analysis)
+
+To this, I'm going to use the method codes for alpha diverisity, beta diverisity,
+and differential abundance.
 
 ```{r}
-alpha.lvl <- div.levels %>% 
-  count(min_alpha_level) %>%
-  rename(any_of(c(alpha = 'n', taxa='min_alpha_level')))
-beta.lvl <- div.levels %>% 
-  count(min_beta_level) %>%
-  rename(all_of(c(beta = 'n', taxa = 'min_beta_level')))
-da.lvl <- div.levels %>%
-  count(min_diff_abund_level) %>% 
-  rename(all_of(c(da = 'n', taxa = 'min_diff_abund_level')))
-ml.lvl <- div.levels %>%
-  count(min_class_level) %>%
-  rename(all_of(c(ml = 'n', taxa = 'min_class_level')))
+analysis.cat <- data %>% 
+  select(doi, meta_in_title_or_abs, envo, starts_with('meta_goal.micro'), 
+         `analyses_perf.alpha.`, `analyses_perf.beta.`,  `analyses_perf.da.`, 
+         contains('code'), contains('label')) %>%
+  select(-c(purpose_code)) %>%
+  mutate(., , no_out_exp = ((meta_goal.microbiome_outcome. + 
+                           meta_goal.microbiome_exposure.) == 0) * 1
+            , multi_envo = (envo == 'pan environmental') * 1) %>%
+  mutate(., alpha_study_code = ifelse(`analyses_perf.alpha.` == 0, 0, alpha_study_code)
+          , beta_pcoa_code = ifelse(`analyses_perf.beta.` == 0, 0, beta_pcoa_code)
+          , beta_stat_code = ifelse(`analyses_perf.beta.` == 0, 0, beta_stat_code)
+          , da_study_code = ifelse(`analyses_perf.da.` == 0, 0, da_study_code)
+          , da_target_code = ifelse(`analyses_perf.da.` == 0, 0, da_target_code)
+          ) %>%
+  mutate(., alpha_study_label = ifelse(`analyses_perf.alpha.` == 0, 'no alpha', alpha_study_label)
+          , beta_poca_label = ifelse(`analyses_perf.beta.` == 0, 'no beta', beta_poca_label)
+          , beta_stat_label = ifelse(`analyses_perf.beta.` == 0, 'no beta', beta_stat_label)
+          , da_study_label = ifelse(`analyses_perf.da.` == 0, 'no da', da_study_label)
+          , da_target_label = ifelse(`analyses_perf.da.` == 0, 'no da', da_target_label)
+          ) %>%
+  mutate_at(., .vars=vars(ends_with('code'))
+             , .funs=~case_when(no_out_exp == 1 ~ 0
+                              ,multi_envo == 1 ~ 0
+                              ,.default = .)
+             ) %>%
+  mutate_at(., .vars=vars(ends_with('label'))
+             , .funs=~case_when(no_out_exp == 1 ~ 'not outcome/exposure focused'
+                               ,multi_envo == 1 ~ 'pan enviromental'
+                               ,.default = .)
+             ) %>%
+  mutate(., alpha_study_cat = case_when(alpha_study_label == 'no alpha' ~ 6
+                                       ,alpha_study_label == 'pan enviromental' ~ 6
+                                       ,alpha_study_label == 'not outcome/exposure focused' ~ 6
+                                       ,alpha_study_label == 'not described' ~ 5
+                                       ,alpha_study_label == 'analyzed alpha for one study only' ~ 5
+                                       ,alpha_study_label == 'no adjustment for dataset' ~ 1
+                                       ,grepl('random effect', alpha_study_label) ~ 3
+                                       ,grepl('fixed effect', alpha_study_label) ~ 3
+                                       ,grepl('meta ana', alpha_study_label) ~ 3
+                                       ,alpha_study_label == 'all samples pooled for study' ~ 4
+                                       ,alpha_study_label == 'parallel analysis by dataset' ~ 4
+                                       ,alpha_study_label == 'check for study effects and ignore if not significant' ~ 2
+                                       ,.default=99)
+          , beta_pcoa_cat = case_when(beta_poca_label == 'no beta' ~ 6
+                                     ,beta_poca_label == 'pan enviromental' ~ 6
+                                     ,beta_poca_label == 'not outcome/exposure focused' ~ 6
+                                     ,beta_poca_label == 'not described' ~ 5
+                                     ,beta_poca_label == 'no ordination' ~ 5
+                                     ,beta_poca_label == 'no ordination by dataset' ~ 1
+                                     ,beta_poca_label == 'ordination showing dataset effects' ~ 3
+                                     ,beta_poca_label == 'both - Walters' ~ 1
+                                     ,beta_poca_label == 'ordination of dataset average' ~ 4
+                                     ,beta_poca_label == 'parallel ordination by dataset' ~ 4
+                                     ,.default=99)
+          , beta_stat_cat = case_when(beta_stat_label == 'no beta' ~ 6
+                                     ,beta_stat_label == 'pan enviromental' ~ 6
+                                     ,beta_stat_label == 'not outcome/exposure focused' ~ 6
+                                     ,beta_stat_label == 'not described' ~ 5
+                                     ,beta_stat_label == 'no statistical test' ~ 5
+                                     ,beta_stat_label == 'no dataset effect acknoweldged' ~ 1
+                                     ,beta_stat_label == 'no inference test; test by study' ~ 2
+                                     ,beta_stat_label == 'other test accounting for dataset effect' ~ 3
+                                     ,beta_stat_label == 'adonis accounting for dataset effect' ~ 3
+                                     ,beta_stat_label == 'parallel test by dataset' ~ 4
+                                     ,.default=99)
+          , da_study_cat = case_when(da_study_label == 'no da' ~ 6
+                                    ,da_study_label == 'pan enviromental' ~ 6
+                                    ,da_study_label == 'not outcome/exposure focused' ~ 6
+                                    ,da_study_label == 'not described' ~ 5
+                                    ,da_study_label == 'dataset adjustment before analysis' ~ 2
+                                    ,da_study_label == 'fixed effect adjustment for dataset' ~ 3
+                                    ,da_study_label == 'random effects adjustment for dataset' ~ 3
+                                    ,da_study_label == 'meta analysis of datasets' ~ 3
+                                    ,da_study_label == 'no dataset effect acknoweldged' ~ 1
+                                    ,da_study_label == 'other estimate pooling method' ~ 3
+                                    ,da_study_label == 'parallel analyses' ~ 4
+                                    ,.default=99)
+          ) %>%
+  mutate_at(., .vars=vars(ends_with('cat'))
+             , .funs=~case_when(. == 1 ~ 'A.Ignore dataset'
+                               ,. == 2 ~ 'B.Measure but dont adjust'
+                               ,. == 3 ~ 'C.Adjust for dataset'
+                               ,. == 4 ~ 'D.Other dataset approach'
+                               ,. == 5 ~ 'E.Not described'
+                               ,. == 6 ~ 'F.Not analyzed')
+            ) %>%
+  select(c(doi, meta_in_title_or_abs, ends_with('label'), ends_with('cat')))
 
-level.analysis <- alpha.lvl %>%
-  full_join(., beta.lvl, by = join_by(taxa)) %>%
-  full_join(., da.lvl, by = join_by(taxa)) %>%
-  full_join(., ml.lvl, by = join_by(taxa)) %>%
-  mutate(., taxa = replace(taxa, is.na(taxa), 'not analyzed')
-          , level.order = c(3, 1, 2, 6, 7, 4, 5)) %>%
-  arrange(level.order) %>%
-  select(-c(level.order)) %>%
-  mutate_all(., ~replace(., is.na(.), 0))
-
-level.analysis
-```
-# Table construction method, Number of hypervariable regions, and the analytical level
-
-We start by building the data frame with the number of hypervariable regions,
-the analyses performed, the table construction method, and the way the 
-
-```{r, warning=FALSE}
-data.cross <- data %>%
-  column_to_rownames('doi') %>%
-    select(c(starts_with('hypervar_regions'), 'asvs', 'otus',
-             starts_with('otu_type'),  
-             starts_with('anal'), 
-             starts_with('alpha_level'), 
-             starts_with('beta_level'),
-             starts_with('diff_abund_level'),
-             starts_with('class_level'))) %>%
-  mutate(., asvs = case_when(asvs == 'Yes' ~ 1, 
-                             asvs == 'No' ~ 0, 
-                             asvs == 'Unclear/Not described' ~ 2, 
-                             is.na(asvs) ~ 2)
-          , otus = case_when(otus == 'Yes' ~ 1, 
-                             otus == 'No' ~ 0, 
-                             otus == 'Unclear/Not described' ~ 2, 
-                             is.na(otus) ~ 2)
-         ) %>%
-  select(-c(hypervar_regions.Other.)) %>%
-  separate(hypervar_regions_other, c('hypervar_regions.other1.','hypervar_regions.other2.'), ", ") %>%
-  mutate(., hypervar_regions.other1. = (!is.na(hypervar_regions.other1.)) * 1
-          , hypervar_regions.other2. = (!is.na(hypervar_regions.other2.)) * 1) %>%
-  mutate(., beta_level.otu_asv. = replace(`beta_level.otu_asv.`, 
-                                          `beta_level.not_described.` == 'phylotypes', 
-                                          1)
-         , beta_level.not_described. = replace(beta_level.not_described., 
-                                               beta_level.not_described. == 'phylotypes', 
-                                               0)) %>%
-   mutate_all(., ~as.numeric(replace(., is.na(.), 0))) %>%
-   mutate(., num_regions = apply(select(., starts_with('hypervar_regions.')), MARGIN = 1, FUN=sum)
-           , otu_type = case_when((`otu_type.de_novo.` + otu_type.closed_ref. + otu_type.open_ref.) > 1 ~ 'mixed',
-                                   (`otu_type.unclear.` == 1 | `otu_type.not_described.` == 1) ~ 'unclear',
-                                   (otu_type.de_novo. == 1) ~ 'de novo',
-                                   (otu_type.closed_ref. == 1) ~ 'closed ref',
-                                   (otu_type.open_ref. == 1) ~ 'open ref',
-                                   (asvs == 1 & otus != 1) ~ 'asvs')
-          , min_alpha_level = case_when(`alpha_level.otu_asv.`== 1 ~ "otu/asv",
-                                         `alpha_level.species.`== 1 ~ "species",
-                                         `alpha_level.genus.`== 1 ~ "genus",
-                                         `alpha_level.family.`== 1 ~ "family",
-                                         `alpha_level.order.`== 1 ~ "order or higher",
-                                         `alpha_level.class.` == 1 ~ 'order or higher',
-                                         `alpha_level.phylum.` == 1 ~ "order or higher",
-                                         `alpha_level.not_described.` == 1 ~ "unclear")
-           , min_beta_level = case_when(`beta_level.otu_asv.`==1 ~ "otu/asv",
-                                        `beta_level.species.` == 1 ~ "species",
-                                        `beta_level.genus.` ==1 ~ "genus",
-                                        `beta_level.family.`==1 ~ "family",
-                                        `beta_level.order.` == 1 ~ "order or higher",
-                                        `beta_level.class.` ==1 ~ "order or higher",
-                                        `beta_level.phylum.` == 1 ~ "order or higher",
-                                        `beta_level.not_described.`==1 ~"unclear")
-          ,min_diff_abund_level=case_when(`diff_abund_level.otu_asv.`==1 ~"otu/asv",
-                                          `diff_abund_level.species.`==1 ~"species",
-                                          `diff_abund_level.genus.`==1 ~"genus",
-                                          `diff_abund_level.family.`==1 ~"family",
-                                          `diff_abund_level.order.`==1 ~"order or higher",
-                                          `diff_abund_level.class.`==1 ~"order or higher",
-                                          `diff_abund_level.phylum.`==1 ~"order or higher",
-                                          `diff_abund_level.not_described.` == 1 ~ "unclear")
-           ) %>%
-  select(., c(num_regions, 
-              otu_type, min_alpha_level, min_beta_level, min_diff_abund_level,
-              analyses_perf.alpha., analyses_perf.beta.,
-              analyses_perf.differenital_abundance.,)) %>%
-  filter(., otu_type %in% c('de novo', 'closed ref', 'asvs')) %>%
-  filter(., num_regions > 0) %>%
-  filter(., apply(select(., starts_with('anal')), MARGIN = 1, FUN = sum) > 0) %>%
-  mutate(., multi_region = replace((num_regions > 1) * 1 + 1, num_regions == 0, NA)
-          , alpha_feature = replace((min_alpha_level == 'otu/asv') * 1, analyses_perf.alpha. != 1, NA)
-          , beta_feature = replace((min_beta_level == 'otu/asv') * 1, analyses_perf.beta. != 1, NA)
-          , da_feature = replace((min_diff_abund_level == 'otu/asv') * 1, analyses_perf.differenital_abundance. != 1, NA)
-          , otu_type2 = (otu_type == 'closed ref') * 1
-        )
-
-dim(data.cross)
 ```
 
 ```{r}
-data.cross %>% group_by(otu_type2) %>% count()
-```
-```{r}
-data.cross %>% group_by(multi_region) %>% count()
-```
-```{r}
-data.cross %>% group_by(multi_region) %>% count()
-```
-## Number of hypervraible regions and table construction method 
-
-```{r}
-num.regions <- data.cross %>% 
-  group_by(otu_type2, multi_region) %>% 
+table4 <- analysis.cat %>%
+  select(meta_in_title_or_abs, ends_with('cat')) %>%
+  mutate(., alpha_spacer_cat =  'G.Total_1'
+          , beta_pcoa_spacer_cat =   'G.Total_1'
+          , beta_stat_spacer_cat =   'G.Total_1'
+          , da_spacer_cat =   'G.Total_1') %>%
+  mutate(., alpha_s2_cat = ifelse(alpha_study_cat == 'F.Not analyzed', NA, 'H.Total_2')
+          , beta_pcoa_s2_cat = ifelse(beta_pcoa_cat == 'F.Not analyzed', NA, 'H.Total_2')
+          , beta_stat_s2_cat = ifelse(beta_stat_cat == 'F.Not analyzed', NA, 'H.Total_2')
+          , da_s2_cat = ifelse(da_study_cat == 'F.Not analyzed', NA, 'H.Total_2')
+          ) %>%
+  pivot_longer(cols=ends_with('cat'), values_to = 'analysis_cat') %>%
+  filter(., !is.na(analysis_cat)) %>%
+  mutate(., analysis_type = case_when(grepl('pcoa', name) ~ 'Beta Ordination'
+                                      ,grepl('beta', name) ~ 'Beta statistics'
+                                      ,grepl('alpha', name) ~ 'Alpha diveristy'
+                                      ,.default = 'Differential Abundance'
+                                      )
+          , total = -1
+          ,meta_in_title_or_abs = as.numeric(meta_in_title_or_abs)) %>%
+  select(-c(name)) %>%
+  pivot_longer(cols=c(meta_in_title_or_abs, total), values_to = 'with_meta') %>%
+  select(-c(name)) %>%
+  filter(., with_meta != 0) %>%
+  group_by(with_meta, analysis_type, analysis_cat) %>%
   count() %>%
   ungroup() %>%
-  pivot_wider(., id_cols = otu_type2, 
-              names_from = multi_region, 
-              values_from = n, 
-              values_fill = 0)
-num.regions
+  pivot_wider(., id_cols = c(with_meta, analysis_cat)
+               , names_from = analysis_type
+               , values_from = n
+               , values_fill = 0) %>%
+  pivot_longer(., cols = -c(with_meta, analysis_cat)
+                , names_to = 'analysis_type'
+                , values_to = 'n') %>%
+  group_by(with_meta, analysis_type) %>%
+  mutate(., total1 = sum(n * !(analysis_cat %in% c('G.Total_1', 'H.Total_2')))
+          , total2 = sum(n * !(analysis_cat %in% c('F.Not analyzed', 'G.Total_1', 'H.Total_2')))
+          ) %>%
+  ungroup() %>%
+  arrange(., with_meta, analysis_type, analysis_cat) %>%
+  mutate(., p1 = ifelse(grepl('total', tolower(analysis_cat)), NA, round(n / total1, 2) * 100)
+          , p2 = case_when(grepl('total', tolower(analysis_cat)) ~ NA
+                          ,analysis_cat %in% c('F.Not analyzed') ~ NA
+                          ,.default=round(n / total2, 2) * 100)
+          ) %>%
+  filter(., analysis_cat != 'G.Total_1') %>%
+  mutate(., label_str = case_when(analysis_cat == 'F.Not analyzed' ~ as.character(n)
+                                 ,analysis_cat == 'H.Total_2' ~ paste('(n=', n, ')', sep='')
+                                 ,.default = paste(n, ' (', p2, '%)', sep='')
+                                 )
+          , meta_analysis = case_when(with_meta == -1 ~ 'All studies'
+                                     ,with_meta == 1 ~ 'Meta Analysis in title or abstract')
+          , analysis_cat = ifelse(analysis_cat == 'H.Total_2', '', analysis_cat)
+          ) %>%
+  pivot_wider(., id_cols = c(analysis_type, analysis_cat)
+               , names_from = meta_analysis
+               , values_from = label_str) %>%
+  arrange(analysis_type, analysis_cat) %>%
+  mutate(., analysis_type = ifelse(analysis_cat != '', '', analysis_type))
 ```
 
-```{r}
-num.regions %>% select(c(`1`, `2`)) %>%fisher.test()
-num.regions %>% select(c(`1`, `2`)) %>% chisq.test()
+```{r, echo=FALSE}
+table4 %>% reactable(., defaultPageSize = 7)
+res.table[['table4_analysis_type']] <- table4
 ```
-## Analyses performed 
 
-```{r}
-data.cross %>% select(starts_with('anal')) %>% summarize(across(everything(), sum))
-```
-```{r}
-data.cross %>% select(starts_with('anal')) %>% 
-  summarize(across(everything(), mean)) %>%
-  mutate_all(., ~round(., 3))
+## Alpha Diversity
 
-```
-## Number of regions vs analysis
-
-### Alpha Diversity
-
-```{r}
-alpha.rgn <- data.cross %>% 
-  group_by(multi_region, analyses_perf.alpha.) %>% 
+```{r, result='hide'}
+table_s12 <- analysis.cat %>% 
+  mutate(, alpha_label2 = alpha_study_cat) %>%
+  pivot_longer(cols=c(alpha_study_label, alpha_label2), values_to = 'label') %>%
+  select(c(doi, alpha_study_cat, label)) %>%
+  rename(c(cat='alpha_study_cat')) %>%
+  group_by(cat, label) %>%
   count() %>%
   ungroup() %>%
-  pivot_wider(id_cols = multi_region, 
-              names_from = analyses_perf.alpha., 
-              values_from = n,
-              values_fill = 0)
-alpha.rgn
+  mutate(., total2 = sum(n * (cat != 'F.Not analyzed') * (label == cat))
+          , p2 = ifelse(cat == 'F.Not analyzed', NA, round(n / total2, 2) * 100)
+          ) %>%
+  arrange(cat, desc(n), label) %>%
+  mutate(., tidy = ifelse(is.na(p2), as.character(n), paste(n, ' (', p2, '%)', sep=''))
+          , label = ifelse(label == cat, '', label)
+          , cat = ifelse(label == '', cat, '')
+          , metric_label = paste('Alpha (n=', total2, ')', sep='')
+          ) %>%
+  pivot_wider(., id_cols = c(cat, label)
+               , names_from = metric_label
+               , values_from = tidy)
+```
+```{r, echo=FALSE}
+table_s12 %>% reactable(., defaultPageSize = 20)
+supplemental.tables[['table_s10_alpha_analsyis']] <- table_s12
 ```
 
-```{r}
-alpha.rgn %>% select(c(`0`, `1`)) %>% fisher.test()
-alpha.rgn %>% select(c(`0`, `1`)) %>% chisq.test()
-```
+## Beta Diversity Ordination
 
-### Beta Diversity
-
-```{r}
-beta.rgn <- data.cross %>% 
-  group_by(multi_region, analyses_perf.beta.) %>% 
+```{r, result='hide'}
+table_s13 <- 
+  analysis.cat %>% 
+  mutate(, beta_pcoa_label2 = beta_pcoa_cat) %>%
+  pivot_longer(cols=c(beta_poca_label, beta_pcoa_label2), values_to = 'label') %>%
+  rename(c(cat='beta_pcoa_cat')) %>%
+  select(c(doi, cat, label)) %>%
+  group_by(cat, label) %>%
   count() %>%
   ungroup() %>%
-  pivot_wider(id_cols = multi_region, 
-              names_from = analyses_perf.beta., 
-              values_from = n,
-              values_fill = 0)
-beta.rgn
+  mutate(., total2 = sum(n * (cat != 'F.Not analyzed') * (label == cat))
+          , p2 = ifelse(cat == 'F.Not analyzed', NA, round(n / total2, 2) * 100)
+          ) %>%
+  arrange(cat, desc(n), label) %>%
+  mutate(., tidy = ifelse(is.na(p2), as.character(n), paste(n, ' (', p2, '%)', sep=''))
+          , label = ifelse(label == cat, '', label)
+          , cat = ifelse(label == '', cat, '')
+          , metric_label = paste('Beta Ordination (n=', total2, ')', sep='')
+          ) %>%
+  pivot_wider(., id_cols = c(cat, label)
+               , names_from = metric_label
+               , values_from = tidy)
+```
+```{r, echo=FALSE}
+table_s13 %>% reactable(., defaultPageSize = 15)
+supplemental.tables[['table_s11_beta_ordination']] <- table_s13
 ```
 
-```{r}
-beta.rgn %>% select(c(`0`, `1`)) %>% fisher.test()
-beta.rgn %>% select(c(`0`, `1`)) %>% chisq.test()
-```
 
-### Differential abundance
+## Beta Statistical Analysis
 
-```{r}
-da.rgn <- data.cross %>% 
-  group_by(multi_region, analyses_perf.differenital_abundance.) %>% 
+```{r, result='hide'}
+table_s14 <- 
+  analysis.cat %>% 
+  mutate(, beta_stat_label2 = beta_stat_cat) %>%
+  pivot_longer(cols=c(beta_stat_label, beta_stat_label2), values_to = 'label') %>%
+  rename(c(cat='beta_stat_cat')) %>%
+  select(c(doi, cat, label)) %>%
+  group_by(cat, label) %>%
   count() %>%
   ungroup() %>%
-  pivot_wider(id_cols = multi_region, 
-              names_from = analyses_perf.differenital_abundance., 
-              values_from = n,
-              values_fill = 0)
-da.rgn
+  mutate(., total2 = sum(n * (cat != 'F.Not analyzed') * (label == cat))
+          , p2 = ifelse(cat == 'F.Not analyzed', NA, round(n / total2, 2) * 100)
+          ) %>%
+  arrange(cat, desc(n), label) %>%
+  mutate(., tidy = ifelse(is.na(p2), as.character(n), paste(n, ' (', p2, '%)', sep=''))
+          , label = ifelse(label == cat, '', label)
+          , cat = ifelse(label == '', cat, '')
+          , metric_label = paste('Beta Statitics (n=', total2, ')', sep='')
+          ) %>%
+  pivot_wider(., id_cols = c(cat, label)
+               , names_from = metric_label
+               , values_from = tidy)
+```
+```{r, echo=FALSE}
+table_s14 %>% reactable(., defaultPageSize = 20)
+supplemental.tables[['table_s12_beta_stat']] <- table_s14
 ```
 
-```{r}
-da.rgn %>% select(c(`0`, `1`)) %>% fisher.test()
-da.rgn %>% select(c(`0`, `1`)) %>% chisq.test()
-```
+## Differential Abundance
 
-
-## Analysis by table construction
-
-### Alpha Diversity
-
-```{r}
-alpha.count <- data.cross %>% 
-  group_by(otu_type2, analyses_perf.alpha.) %>% 
+```{r, result='hide'}
+table_s15 <- 
+  analysis.cat %>% 
+  mutate(, da_study_label2 = da_study_cat) %>%
+  pivot_longer(cols=c(da_study_label, da_study_label2), values_to = 'label') %>%
+  rename(c(cat='da_study_cat')) %>%
+  select(c(doi, cat, label)) %>%
+  group_by(cat, label) %>%
   count() %>%
   ungroup() %>%
-  pivot_wider(id_cols = otu_type2, 
-              names_from = analyses_perf.alpha., 
-              values_from = n,
-              values_fill = 0)
-alpha.count
+  mutate(., total2 = sum(n * (cat != 'F.Not analyzed') * (label == cat))
+          , p2 = ifelse(cat == 'F.Not analyzed', NA, round(n / total2, 2) * 100)
+          ) %>%
+  arrange(cat, desc(n), label) %>%
+  mutate(., tidy = ifelse(is.na(p2), as.character(n), paste(n, ' (', p2, '%)', sep=''))
+          , label = ifelse(label == cat, '', label)
+          , cat = ifelse(label == '', cat, '')
+          , metric_label = paste('Beta Statitics (n=', total2, ')', sep='')
+          ) %>%
+  pivot_wider(., id_cols = c(cat, label)
+               , names_from = metric_label
+               , values_from = tidy)
+```
+```{r, echo=FALSE}
+table_s15 %>% reactable(., defaultPageSize = 20)
+supplemental.tables[['table_s13_da_stat']] <- table_s15
+```
+
+## Meta in title and meta analysis
+```{r}
+analysis.cat %>% 
+  filter(., !(alpha_study_label %in% c('pan enviromental', 'not outcome/exposure focused'))) %>%
+  mutate_at(., .vars=vars(ends_with('label'))
+             , .funs=~case_when(. %in% c('no alpha', 'no beta', 'no da') ~ NA
+                               ,.default = grepl('meta', .) * 1)
+             ) %>%
+  mutate(., meta_in_title_or_abs = as.numeric(meta_in_title_or_abs)) %>%
+  pivot_longer(., cols=c(alpha_study_label, da_study_label)
+                , names_to = 'analysis'
+                , values_to = 'has_meta') %>%
+  select(c(doi, meta_in_title_or_abs, analysis, has_meta)) %>% 
+  filter(., !is.na(has_meta)) %>%
+  group_by(doi) %>% 
+  summarise(., meta_in_title_or_abs = max(meta_in_title_or_abs)
+             ,has_meta = max(has_meta)
+             ) %>% 
+  ungroup() %>%
+  summarise(., has_analysis = n()
+             , meta_in_title = sum(meta_in_title_or_abs)
+             , did_meta = sum(has_meta)
+             , meta_in_title_did_meta = sum(has_meta * meta_in_title_or_abs)
+             ) %>%
+  pivot_longer(cols=c(meta_in_title, did_meta, meta_in_title_did_meta)) %>%
+  mutate(., perc = round(value / has_analysis, 2) * 100) %>%
+  reactable()
 ```
 
 ```{r}
-alpha.count %>% select(c(`0`, `1`)) %>% fisher.test()
-alpha.count %>% select(c(`0`, `1`)) %>% chisq.test()
-
+analysis.cat %>% 
+  filter(., !(alpha_study_label %in% c('pan enviromental', 'not outcome/exposure focused'))) %>%
+  mutate_at(., .vars=vars(ends_with('label'))
+             , .funs=~case_when(. %in% c('no alpha', 'no beta', 'no da') ~ NA
+                               ,.default = grepl('meta', .) * 1)
+             ) %>%
+  rowwise() %>%
+  mutate(., meta_in_title_or_abs = as.numeric(meta_in_title_or_abs)
+          , meta_study_label = case_when(is.na(da_study_label) & is.na(alpha_study_label) ~ NA
+                                        ,is.na(da_study_label) ~ alpha_study_label
+                                        ,is.na(alpha_study_label) ~ da_study_label
+                                        ,.default = max(alpha_study_label, da_study_label)
+                                        )
+          ) %>%
+  ungroup() %>%
+  pivot_longer(., cols=c(alpha_study_label, da_study_label, meta_study_label)
+                , names_to = 'analysis'
+                , values_to = 'has_meta') %>%
+  select(c(doi, meta_in_title_or_abs, analysis, has_meta)) %>% 
+  filter(., !is.na(has_meta)) %>%
+  group_by(analysis) %>%
+  summarise(., has_analysis = n()
+             , meta_in_title = sum(meta_in_title_or_abs)
+             , did_meta = sum(has_meta)
+             , meta_in_title_did_meta = sum(has_meta * meta_in_title_or_abs)
+             ) %>%
+  ungroup() %>%  
+  pivot_longer(cols=c(meta_in_title, did_meta, meta_in_title_did_meta)) %>%
+  mutate(., perc = round(value / has_analysis, 2) * 100
+          , tidy = paste(value, ' (', perc, '%)', sep='')
+          , analysis = case_when(grepl('alpha', analysis) ~ paste('Alpha diveristy', '(n =', has_analysis, ')', sep='')
+                                ,grepl('da', analysis) ~ paste('Differential Abundance', '(n =', has_analysis, ')', sep='')
+                                ,grepl('meta', analysis) ~ paste('Any Analysis', '(n =', has_analysis, ')', sep='')
+                                 )
+         , name = case_when(name == 'meta_in_title' ~ 'Meta-analysis in title or abstract'
+                           ,name == 'did_meta' ~ 'Performed a meta analysis'
+                           ,name == 'meta_in_title_did_meta' ~ 'Both'
+                           )
+          )%>%
+  pivot_wider(., id_cols = name
+               , names_from = analysis
+               , values_from = tidy) %>%
+  reactable()
 ```
-### Beta Diversity
 
+## Sample Classification
+
+This is a different mechanism for combining data than what we see in other 
+cases, since it's classification, not inference. 
 
 ```{r}
-beta.count <- data.cross %>% 
-  group_by(otu_type2, analyses_perf.beta.) %>% 
+table_s16 <- data %>%
+  select(c(doi, validation, envo, 
+           `analyses_perf.sample_classification.`,
+           validation, class_train, class_validate)) %>%
+   mutate_at(., .vars=vars(starts_with('class'))
+              , .funs=~case_when(envo == 'pan environmental' ~ 'pan enviromental'
+                                ,`analyses_perf.sample_classification.` == 0 ~ 'No classifier'
+                                ,.default = .)
+              ) %>%
+  group_by(class_train) %>% 
   count() %>%
   ungroup() %>%
-  pivot_wider(id_cols = otu_type2, 
-              names_from = analyses_perf.beta., 
-              values_from = n,
-              values_fill = 0)
-beta.count
+  mutate(., order = c(4, 1, 2, 6, 5, 3, 7)
+          , total = sum(n * !(class_train %in% c('No classifier', 'pan enviromental')))
+          , p2 = case_when(class_train == 'No classifier' ~ NA
+                          ,class_train == 'pan enviromental' ~ NA
+                          ,.default = round(n / total, 2) * 100)
+          , tidy = ifelse(is.na(p2), n, paste(n, ' (', p2, "%)", sep=''))
+          , total2 = paste('Sample classifiction (n=', total, ')',sep='')
+          ) %>%
+  arrange(order) %>%
+  pivot_wider(id_cols = class_train, names_from = total2, values_from = tidy)
+              
+```
+```{r, echo=FALSE}
+table_s16 %>% reactable(., defaultPageSize = 20)
+supplemental.tables[['table_s15_classifier_study']] <- table_s16
 ```
 ```{r}
-beta.count %>% select(c(`0`, `1`)) %>% fisher.test()
-beta.count %>% select(c(`0`, `1`)) %>% chisq.test()
-```
-
-
-```{r}
-data.cross %>%
-  group_by(otu_type, analyses_perf.beta.) %>% 
-  count() %>%
+#table_s10 <- 
+  data %>%
+  select(c(doi, validation, envo, 
+           `analyses_perf.sample_classification.`,
+           validation, class_train, class_validate)) %>%
+   mutate_at(., .vars=vars(starts_with('class'))
+              , .funs=~case_when(envo == 'pan environmental' ~ 'pan enviromental'
+                                ,`analyses_perf.sample_classification.` == 0 ~ 'No classifier'
+                                ,.default = .)
+              ) %>%
+  group_by(class_validate) %>% count() %>%
   ungroup() %>%
-  pivot_wider(id_cols = otu_type, 
-              names_from = analyses_perf.beta., 
-              values_from = n,
-              values_fill = 0)
+  mutate(., sum_keep = (class_validate %in% c('No', 'Yes', 'Not described')) * 1
+          , total = sum(n * sum_keep)
+          , p = ifelse(sum_keep == 1, round(n / total, 2) * 100, NA)
+          , order = c(1, 4, 3, 2, 5)
+          , tidy = ifelse(sum_keep == 1, paste(n, ' (', p, '%)', sep=''), n)
+          , tidy_name = paste('Sample classifier (n=', total, ')', sep='')
+          ) %>%
+  pivot_wider(., id_cols = c(class_validate, order)
+               , names_from = tidy_name
+               , values_from = tidy) %>%
+  arrange(order) %>%
+  select(-c(order)) %>%
+  reactable()
+                        
+              
 ```
+# Saves output tables
 
+And now, we'll try to save the tables?
 
-
-### Differential Abundance
-
-```{r}
-da.count <- data.cross %>% 
-  group_by(otu_type2, analyses_perf.differenital_abundance.) %>% 
-  count() %>%
-  ungroup() %>%
-  pivot_wider(id_cols = otu_type2, 
-              names_from = analyses_perf.differenital_abundance., 
-              values_from = n,
-              values_fill = 0)
-da.count
-```
-
-```{r}
-da.count %>% select(c(`0`, `1`)) %>% fisher.test()
-da.count %>% select(c(`0`, `1`)) %>% chisq.test()
-```
-## Table construction and analysis level
-
-### Alpha
-
-```{r}
-alpha.tab.lvl.count <- data.cross %>%
-  filter(., !is.na(alpha_feature)) %>%
-  group_by(otu_type2, alpha_feature) %>% 
-  count() %>%
-  ungroup() %>%
-  pivot_wider(id_cols = otu_type2,
-              names_from = alpha_feature,
-              values_from = n, 
-              values_fill = 0)
-alpha.tab.lvl.count
-```
-```{r}
-alpha.tab.lvl.count %>% select(c(`0`, `1`)) %>% fisher.test()
-alpha.tab.lvl.count %>% select(c(`0`, `1`)) %>% chisq.test()
-```
-
-
-### Beta Diversity
-
-```{r}
-beta.tab.lvl.count <- data.cross %>%
-  filter(., !is.na(beta_feature)) %>%
-  group_by(otu_type2, beta_feature) %>% 
-  count() %>%
-  ungroup() %>%
-  pivot_wider(id_cols = otu_type2,
-              names_from = beta_feature,
-              values_from = n, 
-              values_fill = 0)
-beta.tab.lvl.count
-```
-
-```{r}
-beta.tab.lvl.count %>% select(c(`0`, `1`)) %>% fisher.test()
-beta.tab.lvl.count %>% select(c(`0`, `1`)) %>% chisq.test()
-```
-
-### Differential Abundance
-
-
-```{r}
-da.tab.lvl.count <- data.cross %>%
-  filter(., !is.na(da_feature)) %>%
-  group_by(otu_type2, da_feature) %>% 
-  count() %>%
-  ungroup() %>%
-  pivot_wider(id_cols = otu_type2,
-              names_from = da_feature,
-              values_from = n, 
-              values_fill = 0)
-da.tab.lvl.count
-```
-
-```{r}
-da.tab.lvl.count %>% select(c(`0`, `1`)) %>% fisher.test()
-da.tab.lvl.count %>% select(c(`0`, `1`)) %>% chisq.test()
-```
-
-
-## Number of regions and table collapse level
-
-### Alpha Diversity
-
-```{r}
-alpha.reg.count <- data.cross %>%
-  filter(., analyses_perf.alpha. == 1) %>%
-  group_by(multi_region, alpha_feature) %>% 
-  count() %>%
-  ungroup() %>%
-  pivot_wider(id_cols = multi_region,
-              names_from = alpha_feature,
-              values_from = n, 
-              values_fill = 0)
-alpha.reg.count
-```
-
-```{r}
-alpha.reg.count %>% select(c(`0`, `1`)) %>% fisher.test()
-alpha.reg.count %>% select(c(`0`, `1`)) %>% chisq.test()
-```
-I want to see this by table construction method.
-
-```{r}
-alpha.rgn.cotu.count <-  data.cross %>%
-  filter(., (analyses_perf.alpha. == 1) & (otu_type2 == 1)) %>%
-  group_by(multi_region, alpha_feature) %>% 
-  count() %>%
-  ungroup() %>%
-  pivot_wider(id_cols = multi_region,
-              names_from = alpha_feature,
-              values_from = n, 
-              values_fill = 0)
-alpha.rgn.cotu.count
-```
-```{r}
-alpha.rgn.cotu.count %>% select(c(`0`, `1`)) %>% fisher.test()
-alpha.rgn.cotu.count %>% select(c(`0`, `1`)) %>% chisq.test()
-```
-And then ASVs and de novo OTUs
-```{r}
-alpha.rgn.dotu.count <-  data.cross %>%
-  filter(., (analyses_perf.alpha. == 1) & (otu_type2 == 0)) %>%
-  group_by(multi_region, alpha_feature) %>% 
-  count() %>%
-  ungroup() %>%
-  pivot_wider(id_cols = multi_region,
-              names_from = alpha_feature,
-              values_from = n, 
-              values_fill = 0)
-alpha.rgn.dotu.count
-```
-```{r}
-alpha.rgn.dotu.count %>% select(c(`0`, `1`)) %>% fisher.test()
-alpha.rgn.dotu.count %>% select(c(`0`, `1`)) %>% chisq.test()
-```
-
-
-### Beta diversity
-
-
-```{r}
-beta.reg.count <- data.cross %>%
-  filter(., !is.na(beta_feature)) %>%
-  group_by(multi_region, beta_feature) %>% 
-  count() %>%
-  ungroup() %>%
-  pivot_wider(id_cols = multi_region,
-              names_from = beta_feature,
-              values_from = n, 
-              values_fill = 0)
-beta.reg.count
-```
-
-```{r}
-beta.reg.count %>% select(c(`0`, `1`)) %>% fisher.test()
-beta.reg.count %>% select(c(`0`, `1`)) %>% chisq.test()
-```
-And then Closed Ref OTUs
-
-```{r}
-beta.reg.count.cotu <- data.cross %>%
-  filter(., !is.na(beta_feature) & (otu_type2 == 1)) %>%
-  group_by(multi_region, beta_feature) %>% 
-  count() %>%
-  ungroup() %>%
-  pivot_wider(id_cols = multi_region,
-              names_from = beta_feature,
-              values_from = n, 
-              values_fill = 0)
-beta.reg.count.cotu
-```
-
-
-```{r}
-beta.reg.count.cotu %>% select(c(`0`, `1`)) %>% fisher.test()
-beta.reg.count.cotu %>% select(c(`0`, `1`)) %>% chisq.test()
-```
-
-```{r}
-beta.reg.count.dotu <- data.cross %>%
-  filter(., !is.na(beta_feature) & (otu_type2 == 0)) %>%
-  group_by(multi_region, beta_feature) %>% 
-  count() %>%
-  ungroup() %>%
-  pivot_wider(id_cols = multi_region,
-              names_from = beta_feature,
-              values_from = n, 
-              values_fill = 0)
-beta.reg.count.dotu
-```
-
-
-```{r}
-beta.reg.count.dotu %>% select(c(`0`, `1`)) %>% fisher.test()
-beta.reg.count.dotu %>% select(c(`0`, `1`)) %>% chisq.test()
-```
-
-### Differential Abundance
-```{r}
-da.reg.count <- data.cross %>%
-  filter(., !is.na(da_feature)) %>%
-  group_by(multi_region, da_feature) %>% 
-  count() %>%
-  ungroup() %>%
-  pivot_wider(id_cols = multi_region,
-              names_from = da_feature,
-              values_from = n, 
-              values_fill = 0)
-da.reg.count
-```
-
-```{r}
-da.reg.count %>% select(c(`0`, `1`)) %>% fisher.test()
-da.reg.count %>% select(c(`0`, `1`)) %>% chisq.test()
-```
-
-```{r}
-da.reg.count.cotu <- data.cross %>%
-  filter(., !is.na(da_feature) & (otu_type2 == 1)) %>%
-  group_by(multi_region, da_feature) %>% 
-  count() %>%
-  ungroup() %>%
-  pivot_wider(id_cols = multi_region,
-              names_from = da_feature,
-              values_from = n, 
-              values_fill = 0)
-da.reg.count.cotu
-```
-
-```{r}
-da.reg.count.cotu %>% select(c(`0`, `1`)) %>% fisher.test()
-da.reg.count.cotu %>% select(c(`0`, `1`)) %>% chisq.test()
-```
-
-```{r}
-da.reg.count.dotu1 <- data.cross %>%
-  filter(., !is.na(da_feature) & (otu_type2 == 1 )) %>% # Not sure which otu_type2 you want to look at here
-  group_by(multi_region, da_feature) %>% # so I just made two versions
-  count() %>%
-  ungroup() %>%
-  pivot_wider(id_cols = multi_region,
-              names_from = da_feature,
-              values_from = n, 
-              values_fill = 0)
-da.reg.count.dotu1
-
-
-da.reg.count.dotu0 <- data.cross %>%
-  filter(., !is.na(da_feature) & (otu_type2 == 0 )) %>% # Not sure which otu_type2 you want to look at here
-  group_by(multi_region, da_feature) %>% 
-  count() %>%
-  ungroup() %>%
-  pivot_wider(id_cols = multi_region,
-              names_from = da_feature,
-              values_from = n, 
-              values_fill = 0)
-da.reg.count.dotu0
-```
-
-```{r}
-da.reg.count.dotu1 %>% select(c(`0`, `1`)) %>% fisher.test()
-da.reg.count.dotu1 %>% select(c(`0`, `1`)) %>% chisq.test()
-```
-
-```{r}
-da.reg.count.dotu0 %>% select(c(`0`, `1`)) %>% fisher.test()
-da.reg.count.dotu0 %>% select(c(`0`, `1`)) %>% chisq.test()
+```{r, warnings=FALSE}
+dir.create('output/table')
+for(name in names(res.table)){
+  write.csv(res.table[[name]], paste('output/table/', name, '.csv', sep=''))
+}
+dir.create('output/supplemental_tables')
+for(name in names(supplemental.tables)){
+  write.csv(supplemental.tables[[name]]
+            , paste('output/supplemental_tables/', name, '.csv', sep=''))
+}
 ```
 
